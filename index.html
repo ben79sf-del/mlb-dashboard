@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLB Betting Model v6</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0c0f;--surface:#111318;--surface2:#181c23;--border:#1f2430;--border2:#2a3040;--text:#e8eaf0;--muted:#5a6175;--accent:#00d4ff;--green:#00e676;--red:#ff4444;--yellow:#ffd740;--orange:#ff9800;--purple:#b388ff;--teal:#00bfa5;--mono:'DM Mono',monospace;--display:'Bebas Neue',sans-serif;--body:'DM Sans',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:14px;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");pointer-events:none;z-index:0}
+header{position:relative;z-index:1;border-bottom:1px solid var(--border);padding:0 32px;display:flex;align-items:center;gap:16px;height:64px;background:linear-gradient(180deg,#12161f 0%,transparent 100%)}
+.logo{font-family:var(--display);font-size:28px;letter-spacing:3px;color:var(--accent);text-shadow:0 0 30px rgba(0,212,255,0.3)}
+.logo span{color:var(--text)}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:1px;padding:3px 8px;border-radius:4px}
+.v-badge{color:var(--teal);border:1px solid rgba(0,191,165,0.3);background:rgba(0,191,165,0.06)}
+.d-badge{color:var(--muted);border:1px solid var(--border2)}
+.odds-badge{color:var(--green);border:1px solid rgba(0,230,118,0.3);background:rgba(0,230,118,0.06)}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.upload-btn{background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:7px 14px;border-radius:6px;cursor:pointer;font-family:var(--body);font-size:13px;transition:all .15s}
+.upload-btn:hover{border-color:var(--accent);color:var(--accent)}
+input[type=file]{display:none}
+/* ── PRINT STYLES ─────────────────────────────────────────── */
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body { background: #fff !important; color: #111 !important; font-size: 11px !important; }
+  body::before { display: none !important; }
+  header { background: #fff !important; border-bottom: 2px solid #111 !important; padding: 8px 16px !important; height: auto !important; }
+  .logo { color: #111 !important; text-shadow: none !important; font-size: 20px !important; }
+  .logo span { color: #555 !important; }
+  .badge { border-color: #ccc !important; color: #555 !important; background: #f5f5f5 !important; }
+  /* hide interactive chrome only */
+  .header-right, .filter-bar, .modal-backdrop, #emptyState,
+  #targetFilterBar, .upload-btn, .strict-btn, #strictBanner, #playCountBadge { display: none !important; }
+  main { padding: 8px 12px !important; max-width: 100% !important; }
+
+  /* ── Summary tiles ── */
+  .summary-rail { grid-template-columns: repeat(8,1fr) !important; gap: 6px !important; margin-bottom: 12px !important; }
+  .stat-tile { background: #f8f8f8 !important; border: 1px solid #ddd !important; padding: 8px !important; }
+  .stat-tile .val { font-size: 22px !important; color: #111 !important; }
+  .stat-tile .lbl { color: #666 !important; }
+  .val.accent,.val.green,.val.red,.val.yellow,.val.purple,.val.orange,.val.teal { color: #111 !important; }
+  .section-title { color: #333 !important; font-size: 14px !important; border-bottom: 1px solid #ccc !important; padding-bottom: 4px !important; }
+  .section-title::after { background: #ccc !important; }
+
+  /* ── Bet cards ── */
+  .bets-grid { grid-template-columns: repeat(3,1fr) !important; gap: 8px !important; margin-bottom: 16px !important; }
+  .bet-card { background: #f9f9f9 !important; border: 1px solid #ccc !important; border-radius: 6px !important; box-shadow: none !important; animation: none !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+  .bet-card.high { border-left: 4px solid #00aa44 !important; }
+  .bet-card.med  { border-left: 4px solid #cc8800 !important; }
+  .card-header { border-bottom: 1px solid #ddd !important; padding: 7px 10px 6px !important; background: #f0f0f0 !important; }
+  .matchup-name { color: #666 !important; font-size: 9px !important; }
+  .bet-type { font-size: 16px !important; color: #111 !important; }
+  .conf-badge { font-size: 9px !important; }
+  .conf-HIGH { background: #e8f8ee !important; color: #00aa44 !important; border-color: #00aa44 !important; }
+  .conf-MED  { background: #fff8e0 !important; color: #cc8800 !important; border-color: #cc8800 !important; }
+  .card-body { padding: 7px 10px !important; }
+  .lean-value { color: #111 !important; font-size: 11px !important; }
+  .lean-value.over  { color: #007700 !important; }
+  .lean-value.under { color: #0055cc !important; }
+  .lean-value.nrfi  { color: #6600aa !important; }
+  .lean-value.fade  { color: #cc0000 !important; }
+  .lean-value.kprop { color: #886600 !important; }
+  .odds-line { color: #444 !important; font-size: 10px !important; }
+  .odds-price { border-color: #ccc !important; }
+  .odds-price.dog { color: #007700 !important; background: #eeffee !important; }
+  .odds-price.fav { color: #cc0000 !important; background: #ffeeee !important; }
+  .value-tag { font-size: 9px !important; }
+  .value-HIGH { color: #007700 !important; background: #eeffee !important; border-color: #007700 !important; }
+  .value-FAIR { color: #005577 !important; background: #eef8ff !important; border-color: #005577 !important; }
+  .value-POOR { color: #884400 !important; background: #fff4ee !important; border-color: #884400 !important; }
+  .value-MARG { color: #666 !important; background: #f5f5f5 !important; }
+  .sp-tag { color: #555 !important; border-color: #ccc !important; background: #f5f5f5 !important; font-size: 9px !important; }
+  .sp-tag.weak   { color: #cc0000 !important; background: #ffeeee !important; border-color: #cc0000 !important; }
+  .sp-tag.strong { color: #007700 !important; background: #eeffee !important; border-color: #007700 !important; }
+  .signal-chip { color: #555 !important; border-color: #ccc !important; background: #f5f5f5 !important; font-size: 9px !important; }
+  .signal-chip.pos  { color: #007700 !important; background: #eeffee !important; }
+  .signal-chip.neg  { color: #cc0000 !important; background: #ffeeee !important; }
+  .signal-chip.warn { color: #886600 !important; background: #fff8e0 !important; }
+  .signal-chip.neu  { color: #004488 !important; background: #eef4ff !important; }
+  .suppressed-notice { color: #888 !important; background: #f5f5f5 !important; border-color: #ccc !important; font-size: 9px !important; }
+
+  /* ── Game summary table ── */
+  .game-table-wrap { display: block !important; overflow: visible !important; border: 1px solid #ccc !important; border-radius: 0 !important; margin-bottom: 16px !important; page-break-inside: auto !important; }
+  table { width: 100% !important; font-size: 9px !important; border-collapse: collapse !important; }
+  thead tr { background: #f0f0f0 !important; }
+  thead th { color: #444 !important; padding: 5px 6px !important; border-bottom: 1px solid #ccc !important; font-size: 8px !important; }
+  tbody tr { border-bottom: 1px solid #eee !important; }
+  tbody tr:hover { background: none !important; }
+  td { padding: 5px 6px !important; color: #111 !important; white-space: normal !important; word-break: break-word !important; }
+  td.matchup-cell { font-size: 10px !important; min-width: unset !important; }
+  .pill { font-size: 8px !important; padding: 1px 4px !important; }
+  .pill-green  { background: #eeffee !important; color: #007700 !important; }
+  .pill-red    { background: #ffeeee !important; color: #cc0000 !important; }
+  .pill-yellow { background: #fffbe0 !important; color: #886600 !important; }
+  .pill-purple { background: #f3eeff !important; color: #6600aa !important; }
+  .pill-muted  { background: #f5f5f5 !important; color: #666 !important; }
+
+  /* ── Pitcher targets section ── */
+  #targetsSection { display: block !important; }
+  #targetsWrap { display: block !important; margin-bottom: 16px !important; }
+  #targetsWrap .game-table-wrap { display: block !important; }
+  #targetsTable { font-size: 9px !important; }
+  #targetsTable thead th { font-size: 8px !important; padding: 5px 6px !important; color: #444 !important; background: #f0f0f0 !important; }
+  #targetsTable td { padding: 4px 6px !important; font-size: 9px !important; color: #111 !important; }
+
+  .print-header-date { display: block !important; font-size: 10px; color: #666; margin-top: 2px; }
+}
+.print-header-date { display: none; }
+main{position:relative;z-index:1;max-width:1500px;margin:0 auto;padding:24px 32px}
+.summary-rail{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:24px}
+.stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center}
+.stat-tile .val{font-family:var(--display);font-size:32px;letter-spacing:1px;line-height:1;margin-bottom:3px}
+.stat-tile .lbl{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
+.val.accent{color:var(--accent)}.val.green{color:var(--green)}.val.red{color:var(--red)}
+.val.yellow{color:var(--yellow)}.val.purple{color:var(--purple)}.val.orange{color:var(--orange)}.val.teal{color:var(--teal)}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center}
+.filter-label{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-right:4px}
+.filter-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:5px 13px;border-radius:20px;cursor:pointer;font-size:12px;font-family:var(--body);transition:all .15s;white-space:nowrap}
+.filter-btn:hover,.filter-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,0.06)}
+.divider{width:1px;height:26px;background:var(--border)}
+.section-title{font-family:var(--display);font-size:18px;letter-spacing:2px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+.bets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-bottom:32px}
+.bet-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:transform .15s,border-color .15s,box-shadow .15s;cursor:pointer;animation:fadeUp .3s ease both}
+.bet-card:hover{transform:translateY(-2px);border-color:var(--border2);box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.bet-card.high{border-left:3px solid var(--green)}.bet-card.med{border-left:3px solid var(--yellow)}
+.card-header{padding:11px 15px 9px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start}
+.matchup-name{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.5px;margin-bottom:2px}
+.bet-type{font-family:var(--display);font-size:21px;letter-spacing:1px;line-height:1}
+.conf-badge{font-size:10px;font-family:var(--mono);letter-spacing:1px;padding:3px 7px;border-radius:4px}
+.conf-HIGH{background:rgba(0,230,118,.15);color:var(--green);border:1px solid rgba(0,230,118,.3)}
+.conf-MED{background:rgba(255,215,64,.12);color:var(--yellow);border:1px solid rgba(255,215,64,.25)}
+.conf-LOW{background:rgba(90,97,117,.2);color:var(--muted);border:1px solid var(--border)}
+.conf-SUPPRESSED{background:rgba(90,97,117,.1);color:var(--muted);border:1px solid var(--border);opacity:.6}
+.card-body{padding:11px 15px}
+.lean-value{font-family:var(--mono);font-size:14px;color:var(--text);margin-bottom:6px;font-weight:500}
+.lean-value.over{color:var(--green)}.lean-value.under{color:var(--accent)}.lean-value.nrfi{color:var(--purple)}
+.lean-value.fade{color:var(--red)}.lean-value.kprop{color:var(--yellow)}.lean-value.suppressed{color:var(--muted);text-decoration:line-through;opacity:.6}
+/* Odds line on card */
+.odds-line{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.odds-price{padding:1px 6px;border-radius:3px;font-size:11px;border:1px solid var(--border2)}
+.odds-price.fav{color:var(--red);border-color:rgba(255,68,68,.2);background:rgba(255,68,68,.05)}
+.odds-price.dog{color:var(--green);border-color:rgba(0,230,118,.2);background:rgba(0,230,118,.05)}
+.odds-price.even{color:var(--muted)}
+.value-tag{font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:3px}
+.value-HIGH{color:var(--green);background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.25)}
+.value-FAIR{color:var(--teal);background:rgba(0,191,165,.08);border:1px solid rgba(0,191,165,.2)}
+.value-MARG{color:var(--muted);background:rgba(90,97,117,.1);border:1px solid var(--border)}
+.value-POOR{color:var(--orange);background:rgba(255,152,0,.08);border:1px solid rgba(255,152,0,.25)}
+.card-sp-row{display:flex;gap:5px;margin-bottom:7px;flex-wrap:wrap}
+.sp-tag{font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:3px;border:1px solid var(--border2);color:var(--muted)}
+.sp-tag.weak{color:var(--red);border-color:rgba(255,68,68,.25);background:rgba(255,68,68,.06)}
+.sp-tag.strong{color:var(--green);border-color:rgba(0,230,118,.2);background:rgba(0,230,118,.05)}
+.signals-row{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:7px}
+.signal-chip{font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:3px;border:1px solid var(--border2);color:var(--muted);white-space:nowrap}
+.signal-chip.pos{color:var(--green);border-color:rgba(0,230,118,.2);background:rgba(0,230,118,.05)}
+.signal-chip.neg{color:var(--red);border-color:rgba(255,68,68,.2);background:rgba(255,68,68,.05)}
+.signal-chip.neu{color:var(--accent);border-color:rgba(0,212,255,.2);background:rgba(0,212,255,.05)}
+.signal-chip.warn{color:var(--yellow);border-color:rgba(255,215,64,.2);background:rgba(255,215,64,.05)}
+.signal-chip.sanity{color:var(--orange);border-color:rgba(255,152,0,.3);background:rgba(255,152,0,.06)}
+.suppressed-notice{font-size:10px;font-family:var(--mono);color:var(--muted);background:rgba(90,97,117,.08);border:1px solid var(--border);border-radius:4px;padding:4px 8px;margin-top:4px;line-height:1.4}
+/* Table */
+.game-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:32px}
+table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono)}
+thead tr{background:var(--surface2)}
+thead th{padding:9px 12px;text-align:left;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s;cursor:pointer}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--surface2)}
+td{padding:8px 12px;color:var(--text);white-space:nowrap}
+td.matchup-cell{font-family:var(--body);font-size:13px;font-weight:500;min-width:190px}
+.pill{display:inline-block;padding:2px 7px;border-radius:3px;font-size:10px;font-weight:500;white-space:nowrap}
+.pill-green{background:rgba(0,230,118,.12);color:var(--green)}
+.pill-red{background:rgba(255,68,68,.1);color:var(--red)}
+.pill-yellow{background:rgba(255,215,64,.1);color:var(--yellow)}
+.pill-blue{background:rgba(0,212,255,.1);color:var(--accent)}
+.pill-purple{background:rgba(179,136,255,.1);color:var(--purple)}
+.pill-muted{background:rgba(90,97,117,.15);color:var(--muted)}
+.pill-supp{background:rgba(90,97,117,.08);color:var(--muted);opacity:.6;text-decoration:line-through}
+.pill-orange{background:rgba(255,152,0,.1);color:var(--orange)}
+.pill-teal{background:rgba(0,191,165,.1);color:var(--teal)}
+/* Modal */
+.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;backdrop-filter:blur(4px)}
+.modal-backdrop.open{display:flex;align-items:center;justify-content:center}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:92%;max-width:800px;max-height:90vh;overflow-y:auto;padding:26px}
+.modal-title{font-family:var(--display);font-size:24px;letter-spacing:2px;margin-bottom:3px}
+.modal-subtitle{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:18px}
+.modal-section{margin-bottom:18px}
+.modal-section h3{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:9px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat-grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.stat-grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stat-grid-6{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.stat-box{background:var(--surface2);border-radius:6px;padding:9px 11px}
+.stat-box .s-val{font-family:var(--mono);font-size:16px;font-weight:500;margin-bottom:2px}
+.stat-box .s-lbl{font-size:9px;color:var(--muted);letter-spacing:.5px}
+.close-btn{float:right;background:none;border:1px solid var(--border2);color:var(--muted);padding:5px 11px;border-radius:6px;cursor:pointer;font-family:var(--body);font-size:12px;transition:all .15s}
+.close-btn:hover{border-color:var(--red);color:var(--red)}
+.full-note{font-size:12px;color:var(--muted);background:var(--surface2);padding:9px 13px;border-radius:6px;border-left:2px solid var(--border2);line-height:1.6;margin-bottom:5px}
+.full-note.warn{border-left-color:var(--orange);color:var(--orange)}
+.full-note.supp{border-left-color:var(--muted);opacity:.7;font-style:italic}
+.full-note.good{border-left-color:var(--green);color:var(--green)}
+.full-note.info{border-left-color:var(--accent)}
+.odds-block{background:var(--surface2);border-radius:8px;padding:12px;border:1px solid var(--border2)}
+.odds-block-title{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.odds-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)}
+.odds-row:last-child{border-bottom:none}
+.odds-row .team{font-family:var(--mono);font-size:12px}
+.odds-row .price{font-family:var(--mono);font-size:14px;font-weight:500}
+.odds-row .implied{font-size:10px;color:var(--muted)}
+.value-banner{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;margin-top:8px}
+.value-banner.HIGH{background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.2)}
+.value-banner.FAIR{background:rgba(0,191,165,.06);border:1px solid rgba(0,191,165,.15)}
+.value-banner.MARG{background:rgba(90,97,117,.1);border:1px solid var(--border)}
+.value-banner.POOR{background:rgba(255,152,0,.06);border:1px solid rgba(255,152,0,.2)}
+.bp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bp-box{background:var(--surface2);border-radius:6px;padding:11px}
+.bp-box .bp-team{font-size:11px;color:var(--muted);margin-bottom:3px}
+.bp-box .bp-grade{font-family:var(--display);font-size:18px;letter-spacing:1px;margin-bottom:5px}
+.bp-box .bp-score{font-family:var(--mono);font-size:12px}
+.lineup-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px}
+.lineup-row:last-child{border-bottom:none}
+.lineup-slot{color:var(--muted);width:14px;flex-shrink:0}
+.lineup-name{flex:1;color:var(--text)}
+.conf-low-tag{font-size:9px;color:var(--muted);font-family:var(--mono);padding:1px 4px;border:1px solid var(--border);border-radius:2px;opacity:.7}
+.conf-med-tag{font-size:9px;color:var(--yellow);font-family:var(--mono);padding:1px 4px;border:1px solid rgba(255,215,64,.2);border-radius:2px}
+.conf-high-tag{font-size:9px;color:var(--green);font-family:var(--mono);padding:1px 4px;border:1px solid rgba(0,230,118,.2);border-radius:2px}
+.empty-state{text-align:center;padding:80px 20px;color:var(--muted)}
+.empty-state .icon{font-size:48px;margin-bottom:16px;opacity:.4}
+.empty-state h2{font-family:var(--display);font-size:28px;letter-spacing:2px;color:var(--border2);margin-bottom:8px}
+.empty-state p{font-size:13px;line-height:1.6;max-width:420px;margin:0 auto}
+.empty-state code{font-family:var(--mono);background:var(--surface2);padding:2px 6px;border-radius:3px;font-size:11px;color:var(--accent)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.strict-btn{border-color:rgba(179,136,255,.3)!important;color:var(--purple)!important}
+.strict-btn.active{background:rgba(179,136,255,.12)!important;border-color:var(--purple)!important;color:var(--purple)!important;box-shadow:0 0 12px rgba(179,136,255,.15)}
+.strict-banner{background:rgba(179,136,255,.07);border:1px solid rgba(179,136,255,.2);border-radius:8px;padding:9px 15px;margin-bottom:14px;font-family:var(--mono);font-size:11px;color:var(--purple);letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+.bet-card:nth-child(1){animation-delay:.04s}.bet-card:nth-child(2){animation-delay:.08s}
+.bet-card:nth-child(3){animation-delay:.12s}.bet-card:nth-child(4){animation-delay:.16s}
+.bet-card:nth-child(5){animation-delay:.20s}.bet-card:nth-child(6){animation-delay:.24s}
+@media(max-width:1100px){.summary-rail{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:700px){main{padding:16px};header{padding:0 16px};.bets-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">MLB<span>MODEL</span><span class="print-header-date" id="printDate"></span></div>
+  <div class="badge v-badge">v6</div>
+  <div class="badge d-badge" id="dateBadge">— / — / —</div>
+  <div class="badge odds-badge" id="oddsBadge" style="display:none">💰 Live Odds</div>
+  <div class="header-right">
+    <span id="statusMatchup" class="upload-btn" style="cursor:default;font-size:11px">⟳ Matchup…</span>
+    <span id="statusTargets" class="upload-btn" style="cursor:default;font-size:11px">⟳ Targets…</span>
+    <span id="statusResults" class="upload-btn" style="cursor:default;font-size:11px">⟳ Results…</span>
+    <button class="upload-btn" onclick="printDashboard()" style="border-color:rgba(0,212,255,0.3);color:var(--accent)">🖨 Print</button>
+    <input type="file" id="csvFile" accept=".csv" style="display:none">
+    <input type="file" id="targetsFile" accept=".csv" style="display:none">
+  </div>
+</header>
+<main>
+  <div class="summary-rail">
+    <div class="stat-tile"><div class="val accent"  id="s-games">—</div><div class="lbl">Games Today</div></div>
+    <div class="stat-tile"><div class="val green"   id="s-high">—</div><div class="lbl">High Conf Bets</div></div>
+    <div class="stat-tile"><div class="val yellow"  id="s-med">—</div><div class="lbl">Med Conf Bets</div></div>
+    <div class="stat-tile"><div class="val teal"    id="s-supp">—</div><div class="lbl">Suppressed (IP)</div></div>
+    <div class="stat-tile"><div class="val purple"  id="s-nrfi">—</div><div class="lbl">NRFI Targets</div></div>
+    <div class="stat-tile"><div class="val orange"  id="s-kprop">—</div><div class="lbl">K-Prop Targets</div></div>
+    <div class="stat-tile"><div class="val green"   id="s-hival">—</div><div class="lbl">High Value Bets</div></div>
+    <div class="stat-tile"><div class="val red"     id="s-rain">—</div><div class="lbl">Rain Risk Games</div></div>
+  </div>
+  <div class="filter-bar">
+    <span class="filter-label">Market</span>
+    <button class="filter-btn active" data-filter="market" data-val="all"   onclick="setFilter('market','all',this)">All</button>
+    <button class="filter-btn" data-filter="market" data-val="MONEYLINE"    onclick="setFilter('market','MONEYLINE',this)">Moneyline</button>
+    <button class="filter-btn" data-filter="market" data-val="TOTAL"        onclick="setFilter('market','TOTAL',this)">Total</button>
+    <button class="filter-btn" data-filter="market" data-val="F5"           onclick="setFilter('market','F5',this)">F5</button>
+    <button class="filter-btn" data-filter="market" data-val="NRFI"         onclick="setFilter('market','NRFI',this)">NRFI</button>
+    <button class="filter-btn" data-filter="market" data-val="K-Prop"       onclick="setFilter('market','K-Prop',this)">K Props</button>
+    <button class="filter-btn" data-filter="market" data-val="Fade"         onclick="setFilter('market','Fade',this)">Fade</button>
+    <div class="divider"></div>
+    <span class="filter-label">Conf</span>
+    <button class="filter-btn active" data-filter="conf" data-val="all"     onclick="setFilter('conf','all',this)">All</button>
+    <button class="filter-btn" data-filter="conf" data-val="HIGH"           onclick="setFilter('conf','HIGH',this)">HIGH only</button>
+    <button class="filter-btn" data-filter="conf" data-val="MED"            onclick="setFilter('conf','MED',this)">MED+</button>
+    <div class="divider"></div>
+    <span class="filter-label">Value</span>
+    <button class="filter-btn active" data-filter="value" data-val="all"    onclick="setFilter('value','all',this)">All</button>
+    <button class="filter-btn" data-filter="value" data-val="HIGH VALUE"    onclick="setFilter('value','HIGH VALUE',this)">High Value</button>
+    <button class="filter-btn" data-filter="value" data-val="FAIR VALUE"    onclick="setFilter('value','FAIR VALUE',this)">Fair Value</button>
+    <div class="divider"></div>
+    <button class="filter-btn strict-btn" id="strictToggle" onclick="toggleStrict(this)" title="Strict Mode: HIGH conf only · HIGH/FAIR value on totals · SP xwOBA ≤ 0.310 for ML/F5 · K-Prop platoon K% ≥ 26.5% · No Fade cards">🎯 STRICT MODE</button>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div class="section-title" style="margin-bottom:0">ACTIONABLE BETS</div>
+    <div id="playCountBadge" style="font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.5px"></div>
+  </div>
+  <div class="bets-grid" id="betsGrid"></div>
+  <div class="section-title">ALL GAMES</div>
+  <div class="game-table-wrap">
+    <table id="gameTable">
+      <thead><tr>
+        <th>Matchup</th><th>Home SP</th><th>Away SP</th>
+        <th>Away / Home Lineups</th><th>Env</th>
+        <th>ML</th><th>ML Odds</th>
+        <th>Total</th><th>Line</th><th>Value</th>
+        <th>F5</th><th>F5 Line</th>
+        <th>NRFI</th><th>Home BP</th><th>Away BP</th><th>Rain</th>
+      </tr></thead>
+      <tbody id="gameTableBody"></tbody>
+    </table>
+  </div>
+  <div class="empty-state" id="emptyState">
+    <div class="icon">⚾</div>
+    <h2>NO DATA LOADED</h2>
+    <p>Run the model and upload <code>daily_matchup_full.csv</code> using the button above.</p>
+  </div>
+  <div class="section-title" id="targetsSection" style="display:none">PITCHER TARGET LISTS</div>
+  <div id="targetsWrap" style="display:none;margin-bottom:32px">
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px" id="targetFilterBar">
+      <span class="filter-label">List</span>
+      <button class="filter-btn active" data-tfilter="all"         onclick="setTargetFilter('all',this)">All</button>
+      <button class="filter-btn" data-tfilter="FILTERED"          onclick="setTargetFilter('FILTERED',this)">Fade Targets</button>
+      <button class="filter-btn" data-tfilter="K_BB"              onclick="setTargetFilter('K_BB',this)">K% + BB%</button>
+      <button class="filter-btn" data-tfilter="ELITE_KPROP"       onclick="setTargetFilter('ELITE_KPROP',this)">Elite K-Prop</button>
+      <button class="filter-btn" data-tfilter="NRFI"              onclick="setTargetFilter('NRFI',this)">NRFI</button>
+    </div>
+
+    <div class="game-table-wrap">
+      <table id="targetsTable">
+        <thead><tr>
+          <th>List</th><th>Pitcher</th><th>Hand</th>
+          <th>K%</th><th>BB%</th><th>K-BB%</th>
+          <th>xwOBA</th><th>HardHit%</th><th>Avg IP</th>
+          <th>K% vL</th><th>K% vR</th>
+          <th>TTO xwOBA</th><th>TTO K%</th>
+        </tr></thead>
+        <tbody id="targetsTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<div class="modal-backdrop" id="modalBackdrop" onclick="closeModal(event)">
+  <div class="modal" id="modalContent">
+    <button class="close-btn" onclick="closeModalDirect()">✕ Close</button>
+    <div id="modalInner"></div>
+  </div>
+</div>
+<script>
+let allGames=[], filters={market:'all',conf:'all',value:'all'};
+
+// ── GIST URLS — update these after each daily run ────────────
+const GIST_MATCHUP = 'https://gist.githubusercontent.com/ben79sf-del/2646eb7878b6b52ac71cff0cdeec67ef/raw/mlb_matchup.csv';
+const GIST_TARGETS = 'https://gist.githubusercontent.com/ben79sf-del/2c6c7f7f94bdb67e901db9baa7d77697/raw/mlb_targets.csv';
+const GIST_RESULTS = 'https://gist.githubusercontent.com/ben79sf-del/3c79f6bdd7b4d6d33c5dd0934398be6b/raw/mlb_results.csv';
+
+// ── FETCH HELPERS ─────────────────────────────────────────────
+// Uses jsDelivr CDN which mirrors GitHub Gists with proper CORS headers.
+// Falls back to direct Gist URL if jsDelivr misses.
+// Cache-busted daily so fresh data loads each day without stale CDN responses.
+
+function toJsdelivr(gistUrl) {
+  // Convert:  https://gist.githubusercontent.com/USER/GISTID/raw/FILENAME.csv
+  // To:       https://cdn.jsdelivr.net/gh/gist/USER/GISTID/FILENAME.csv
+  return gistUrl
+    .replace('https://gist.githubusercontent.com/', 'https://cdn.jsdelivr.net/gh/gist/')
+    .replace('/raw/', '/');
+}
+
+async function fetchWithTimeout(url, ms=10000) {
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { cache: 'no-store', signal: controller.signal });
+    clearTimeout(tid);
+    return res;
+  } catch(e) { clearTimeout(tid); throw e; }
+}
+
+async function fetchViaProxy(rawUrl) {
+  // Daily cache-bust so CDN always serves today's file
+  const bust = '?t=' + new Date().toISOString().split('T')[0];
+  const cdnUrl    = toJsdelivr(rawUrl) + bust;
+  const directUrl = rawUrl + bust;
+
+  // Try jsDelivr first (CORS-safe), then direct Gist URL as fallback
+  for (const url of [cdnUrl, directUrl]) {
+    try {
+      const res = await fetchWithTimeout(url, 10000);
+      if (!res.ok) { console.warn(`Fetch ${url} → HTTP ${res.status}`); continue; }
+      const text = await res.text();
+      if (text && text.trim().length > 10 && text.includes(',')) return text;
+    } catch(e) { console.warn(`Fetch failed: ${url}`, e.message); }
+  }
+
+  // Last resort: try corsproxy.io with the original URL (no cache bust)
+  try {
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(rawUrl)}`;
+    const res = await fetchWithTimeout(proxyUrl, 10000);
+    if (res.ok) {
+      const text = await res.text();
+      if (text && text.trim().length > 10 && text.includes(',')) return text;
+    }
+  } catch(e) { console.warn('corsproxy.io fallback failed:', e.message); }
+
+  return null;
+}
+
+function setStatus(id, text, colour) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.style.borderColor = colour || '';
+  el.style.color = colour || '';
+}
+
+async function autoLoadAll() {
+  // ── Matchup CSV ──────────────────────────────────────────────
+  setStatus('statusMatchup', '⟳ Loading…', 'var(--muted)');
+  try {
+    const text = await fetchViaProxy(GIST_MATCHUP);
+    if (text && text.includes(',')) {
+      allGames = parseCSV(text);
+      render();
+      setStatus('statusMatchup', `✅ ${allGames.length} games`, 'var(--green)');
+    } else {
+      setStatus('statusMatchup', '⚠ No matchup data', 'var(--yellow)');
+    }
+  } catch(e) {
+    setStatus('statusMatchup', '✗ Matchup failed', 'var(--red)');
+  }
+
+  // ── Targets CSV ──────────────────────────────────────────────
+  setStatus('statusTargets', '⟳ Loading…', 'var(--muted)');
+  try {
+    const text = await fetchViaProxy(GIST_TARGETS);
+    if (text && text.includes(',')) {
+      allTargets = parseCSV(text);
+      if (allTargets.length) {
+        document.getElementById('targetsSection').style.display = '';
+        document.getElementById('targetsWrap').style.display    = '';
+        renderTargets();
+        setStatus('statusTargets', `✅ ${allTargets.length} targets`, 'var(--green)');
+      } else {
+        setStatus('statusTargets', '— No targets today', 'var(--muted)');
+      }
+    } else {
+      setStatus('statusTargets', '— No targets today', 'var(--muted)');
+    }
+  } catch(e) {
+    setStatus('statusTargets', '✗ Targets failed', 'var(--red)');
+  }
+
+  // ── Results CSV ──────────────────────────────────────────────
+  setStatus('statusResults', '⟳ Loading…', 'var(--muted)');
+  try {
+    const text = await fetchViaProxy(GIST_RESULTS);
+    if (text && text.includes(',')) {
+      const rows = parseCSV(text);
+      if (rows.length) {
+        renderResults(rows);
+        setStatus('statusResults', `✅ ${rows.length} results`, 'var(--green)');
+      } else {
+        setStatus('statusResults', '— No results yet', 'var(--muted)');
+      }
+    } else {
+      setStatus('statusResults', '— No results yet', 'var(--muted)');
+    }
+  } catch(e) {
+    setStatus('statusResults', '✗ Results failed', 'var(--red)');
+  }
+}
+
+// Manual file upload fallbacks (still work if Gist is stale)
+document.getElementById('csvFile').addEventListener('change',e=>{
+  const file=e.target.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=ev=>{allGames=parseCSV(ev.target.result);render();setStatus('statusMatchup',`✅ ${allGames.length} games (manual)`,'var(--green)');};
+  r.readAsText(file);
+});
+document.getElementById('targetsFile').addEventListener('change',e=>{
+  const file=e.target.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    allTargets=parseCSV(ev.target.result);
+    document.getElementById('targetsSection').style.display='';
+    document.getElementById('targetsWrap').style.display='';
+    renderTargets();
+    setStatus('statusTargets',`✅ ${allTargets.length} targets (manual)`,'var(--green)');
+  };
+  r.readAsText(file);
+});
+
+function parseCSV(text){
+  const lines = text.trim().split('\n');
+  if (!lines.length) return [];
+  // Parse header - handle quoted headers and special chars
+  const headers = lines[0].split(',').map((h, i) => {
+    let clean = h.replace(/^"|"$/g,'').trim();
+    if (i === 0) clean = clean.replace(/^\uFEFF/, ''); // strip UTF-8 BOM from first column
+    return clean;
+  });
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; continue; }
+      if (c === ',' && !inQ) { vals.push(cur.trim()); cur = ''; continue; }
+      cur += c;
+    }
+    vals.push(cur.trim());
+    const obj = {};
+    headers.forEach((h, i) => {
+      if (h) obj[h] = (vals[i] || '').replace(/^"|"$/g, '');
+    });
+    return obj;
+  });
+}
+
+function v(g,k){return(g[k]||'').trim();}
+function vf(g,k){const x=parseFloat(g[k]||0);return isNaN(x)?null:x;}
+
+// ── RENDER ───────────────────────────────────────────────────
+function render(){
+  if(!allGames.length)return;
+  document.getElementById('emptyState').style.display='none';
+  const dates=[...new Set(allGames.map(g=>g['Date']))].filter(Boolean);
+  document.getElementById('dateBadge').textContent=dates[0]||'—';
+  const hasOdds=allGames.some(g=>g['Total Line']&&g['Total Line']!='');
+  document.getElementById('oddsBadge').style.display=hasOdds?'':'none';
+  const bets=buildBets(allGames);
+  document.getElementById('s-games').textContent=allGames.length;
+  document.getElementById('s-high').textContent=bets.filter(b=>b.conf==='HIGH').length;
+  document.getElementById('s-med').textContent=bets.filter(b=>b.conf==='MED').length;
+  document.getElementById('s-supp').textContent=allGames.filter(g=>v(g,'ML Lean').includes('SUPPRESSED')).length;
+  document.getElementById('s-nrfi').textContent=allGames.filter(g=>{const n=v(g,'NRFI');return n.includes('NRFI')&&!n.includes('SUPP');}).length;
+  document.getElementById('s-kprop').textContent=allGames.filter(g=>{const k=v(g,'K-Prop Targets');return k&&k!=='None';}).length;
+  document.getElementById('s-hival').textContent=bets.filter(b=>(b.valueRating||'').includes('HIGH')).length;
+  document.getElementById('s-rain').textContent=allGames.filter(g=>v(g,'Rain Risk').includes('HIGH')).length;
+  renderBetCards();renderGameTable();
+}
+
+// ── STRICT MODE ──────────────────────────────────────────────
+let strictMode = false;
+
+function toggleStrict(btn){
+  strictMode = !strictMode;
+  btn.classList.toggle('active', strictMode);
+  renderBetCards();
+}
+
+// Composite quality scoring — mirrors the Python score_play_quality() logic
+function scorePlayQuality(g, betType, lean){
+  const hpX  = vf(g,'Home SP xwOBA')  || 0.320;
+  const apX  = vf(g,'Away SP xwOBA')  || 0.320;
+  const hpIP = vf(g,'Home SP AvgIP')  || 5.0;
+  const apIP = vf(g,'Away SP AvgIP')  || 5.0;
+  const avLS = vf(g,'Away Lineup Score') || 50;
+  const hmLS = vf(g,'Home Lineup Score') || 50;
+  const hBP  = vf(g,'Home BP Score')  || 50;
+  const aBP  = vf(g,'Away BP Score')  || 50;
+  const env  = vf(g,'Env Adj')        || 0;
+  const vr   = v(g,'Total Value Rating');
+  let score  = 0;
+
+  if(betType==='MONEYLINE'){
+    const leanHome = lean.includes('HOME');
+    const spX  = leanHome ? apX  : hpX;   // SP the backed team faces
+    const oppX = leanHome ? hpX  : apX;
+    const bp   = leanHome ? hBP  : aBP;
+    const vuln = leanHome ? hmLS : avLS;
+    if(spX<=0.295) score+=30; else if(spX<=0.310) score+=15;
+    if(bp>=65) score+=25; else if(bp>=55) score+=12;
+    if(vuln>=60) score+=20; else if(vuln>=52) score+=10;
+    if(hpIP>=5.5&&apIP>=5.5) score+=15;
+    if(v(g,'ML Conf')==='HIGH') score+=10;
+    if(oppX<=0.300) score-=20;  // strong opposing SP narrows edge
+  }
+  else if(betType==='TOTAL'){
+    const avgX = (hpX+apX)/2;
+    const avgV = (avLS+hmLS)/2;
+    const tl   = lean; // 'OVER' or 'UNDER'
+    if(tl==='OVER'){
+      if(avgX>=0.340) score+=30; else if(avgX>=0.330) score+=15;
+      if(avgV>=60) score+=20; else if(avgV>=55) score+=10;
+      if(env>=2.0) score+=20; else if(env>=1.0) score+=10;
+    } else if(tl==='UNDER'){
+      if(avgX<=0.290) score+=30; else if(avgX<=0.300) score+=15;
+      if(avgV<=40) score+=20; else if(avgV<=45) score+=10;
+      if(env<=-2.0) score+=20; else if(env<=-1.0) score+=10;
+    }
+    if(vr.includes('HIGH VALUE')) score+=20; else if(vr.includes('FAIR VALUE')) score+=10;
+    if(v(g,'Total Conf')==='HIGH') score+=10;
+  }
+  else if(betType==='F5'){
+    const leanHome = lean.includes('HOME');
+    const spX  = leanHome ? apX  : hpX;
+    const spIP = leanHome ? apIP : hpIP;
+    if(spX<=0.290) score+=35; else if(spX<=0.305) score+=18;
+    if(spIP>=6.0) score+=20; else if(spIP>=5.5) score+=10;
+    if(v(g,'F5 Conf')==='HIGH') score+=25;
+    const vuln = leanHome ? hmLS : avLS;
+    if(vuln>=58) score+=15; else if(vuln>=50) score+=7;
+  }
+  else if(betType==='NRFI'){
+    const hTTO = vf(g,'Home SP xwOBA') || 0.310;  // best proxy available in CSV
+    const aTTO = vf(g,'Away SP xwOBA') || 0.310;
+    if(hTTO<=0.270&&aTTO<=0.270) score+=50;
+    else if(hTTO<=0.280&&aTTO<=0.280) score+=35;
+    else if(hTTO<=0.290&&aTTO<=0.290) score+=15;
+    if(v(g,'NRFI Conf')==='HIGH') score+=20;
+    if(env<=-1.0) score+=15; else if(env>=2.0) score-=20;
+  }
+  else if(betType==='K-Prop'){
+    const kMatch = lean.match(/platoon K%\s*([\d.]+)%/);
+    const kPct   = kMatch ? parseFloat(kMatch[1]) : 0;
+    if(kPct>=30) score+=50; else if(kPct>=27) score+=30; else if(kPct>=25) score+=15;
+    const spIP = Math.max(hpIP,apIP);
+    if(spIP>=6.0) score+=25; else if(spIP>=5.5) score+=10;
+  }
+  return Math.min(100, score);
+}
+
+// Strict mode thresholds per bet type
+const STRICT_THRESHOLDS = {
+  'MONEYLINE': 50,
+  'TOTAL':     48,
+  'F5':        48,
+  'NRFI':      48,
+  'K-Prop':    42,
+};
+
+// ── BET BUILDER ──────────────────────────────────────────────
+function buildBets(games){
+  const bets=[];
+  const strict = strictMode;
+  games.forEach(g=>{
+    const matchup = v(g,'Matchup');
+    const vr      = v(g,'Total Value Rating');
+    const hpX     = vf(g,'Home SP xwOBA') || 0.320;
+    const apX     = vf(g,'Away SP xwOBA') || 0.320;
+
+    function tryAdd(type, market, lean, conf, note, valueRating){
+      if(!lean||lean==='NEUTRAL'||lean==='N/A'||lean.includes('AVOID')||lean==='SUPPRESSED') return;
+      if(conf==='LOW'||conf==='N/A') return;
+
+      // ── Strict Mode gates ─────────────────────────────────────
+      if(strict){
+        // No Fade cards in strict mode — informational only
+        if(market==='Fade') return;
+        // Require HIGH confidence for NRFI and F5
+        if((market==='NRFI'||market==='F5') && conf!=='HIGH') return;
+        // Total must have HIGH/FAIR value
+        if(market==='TOTAL' && !vr.includes('HIGH VALUE') && !vr.includes('FAIR VALUE')) return;
+        // ML/F5: SP the team faces must be ≤ 0.310 xwOBA
+        if(market==='MONEYLINE'||market==='F5'){
+          const leanHome = lean.includes('HOME');
+          const spX = leanHome ? apX : hpX;
+          if(spX>0.310) return;
+        }
+        // K-Prop: platoon K% must be ≥ 26.5%
+        if(market==='K-Prop'){
+          const kMatch = lean.match(/platoon K%\s*([\d.]+)%/);
+          if(!kMatch || parseFloat(kMatch[1]) < 26.5) return;
+        }
+        // Composite quality gate
+        const quality   = scorePlayQuality(g, market, lean);
+        const threshold = STRICT_THRESHOLDS[market] || 48;
+        if(quality < threshold) return;
+      }
+
+      bets.push({type, market, lean, conf, note:note||'', matchup, game:g, valueRating:valueRating||''});
+    }
+
+    tryAdd('ML','MONEYLINE',v(g,'ML Lean'),v(g,'ML Conf'),v(g,'ML IP Note')||v(g,'ML Value Note'));
+
+    const f5=v(g,'F5 Lean');
+    if(f5&&f5!=='NEUTRAL'&&f5!=='SUPPRESSED'&&v(g,'F5 Conf')!=='LOW'){
+      const f5OK = !strict || (v(g,'F5 Conf')==='HIGH' && (()=>{ const lh=f5.includes('HOME'); return (lh?apX:hpX)<=0.310; })());
+      if(f5OK) bets.push({type:'F5',market:'F5',lean:f5,conf:v(g,'F5 Conf'),note:v(g,'F5 IP Note'),matchup,game:g,valueRating:''});
+    }
+
+    tryAdd('Total','TOTAL',v(g,'Total Lean'),v(g,'Total Conf'),v(g,'Total IP Note'),vr);
+
+    const nrfi=v(g,'NRFI');
+    if(nrfi.includes('NRFI')&&!nrfi.includes('SUPP')&&v(g,'NRFI Conf')!=='LOW'){
+      if(!strict||v(g,'NRFI Conf')==='HIGH'){
+        bets.push({type:'NRFI',market:'NRFI',lean:nrfi,conf:v(g,'NRFI Conf'),note:'',matchup,game:g,valueRating:''});
+      }
+    }
+
+    const kp=v(g,'K-Prop Targets');
+    if(kp&&kp!=='None'){
+      kp.split('|').forEach(k=>{
+        k=k.trim();
+        if(!k||k==='None') return;
+        if(strict){
+          const km=k.match(/platoon K%\s*([\d.]+)%/);
+          if(!km||parseFloat(km[1])<26.5) return;
+        }
+        bets.push({type:'K-Prop',market:'K-Prop',lean:k,conf:'MED',note:'',matchup,game:g,valueRating:''});
+      });
+    }
+
+    // Fade: hidden in strict mode
+    if(!strict){
+      const fade=v(g,'Fade Notes');
+      if(fade&&!fade.includes('No strong fade')){
+        fade.split('|').forEach(f=>{f=f.trim();if(f)bets.push({type:'Fade',market:'Fade',lean:f,conf:'MED',note:'',matchup,game:g,valueRating:''}); });
+      }
+    }
+  });
+  return bets;
+}
+
+function renderBetCards(){
+  const grid=document.getElementById('betsGrid');
+  grid.innerHTML='';
+
+  // Remove any existing strict banner
+  const existing=document.getElementById('strictBanner');
+  if(existing) existing.remove();
+
+  const allBets   = buildBets(allGames);   // already filtered by strict mode
+  const mf=filters.market, cf=filters.conf, valf=filters.value;
+
+  const filtered=allBets.filter(b=>{
+    if(mf!=='all'&&b.market!==mf) return false;
+    if(cf==='HIGH'&&b.conf!=='HIGH') return false;
+    if(cf==='MED'&&b.conf==='LOW') return false;
+    if(valf!=='all'&&!(b.valueRating||'').includes(valf)) return false;
+    return true;
+  });
+
+  // Update play count badge
+  const badge=document.getElementById('playCountBadge');
+  if(badge){
+    const hi=filtered.filter(b=>b.conf==='HIGH').length;
+    const md=filtered.filter(b=>b.conf==='MED').length;
+    const modeTag = strictMode ? ' <span style="color:var(--purple)">🎯 STRICT</span>' : '';
+    badge.innerHTML=`<span class="play-count-label"><strong>${filtered.length}</strong> plays — <span style="color:var(--green)">${hi} HIGH</span> · <span style="color:var(--yellow)">${md} MED</span>${modeTag}</span>`;
+  }
+
+  // Show strict mode banner
+  if(strictMode){
+    const banner=document.createElement('div');
+    banner.id='strictBanner';
+    banner.className='strict-banner';
+    banner.innerHTML=`🎯 <strong>STRICT MODE ON</strong> — HIGH conf only for F5/NRFI · SP xwOBA ≤ 0.310 for ML/F5 · Total requires HIGH/FAIR value · K-Prop ≥ 26.5% platoon K% · Fade cards hidden`;
+    grid.before(banner);
+  }
+
+  if(!filtered.length){
+    grid.innerHTML=`<div style="color:var(--muted);padding:20px;font-family:var(--mono);font-size:12px">${strictMode?'No plays pass strict mode filters today. Try relaxing filters or disabling STRICT MODE.':'No bets match current filters.'}</div>`;
+    return;
+  }
+
+  filtered.sort((a,b)=>{
+    const cv=x=>x.conf==='HIGH'?0:1;
+    const vv=x=>(x.valueRating||'').includes('HIGH')?0:(x.valueRating||'').includes('FAIR')?1:2;
+    return cv(a)-cv(b)||vv(a)-vv(b);
+  });
+
+  filtered.forEach((bet,idx)=>{
+    const g=bet.game;
+    const card=document.createElement('div');
+    card.className=`bet-card ${bet.conf==='HIGH'?'high':'med'}`;
+    card.style.animationDelay=`${idx*.04}s`;
+    const leanClass=getLeanClass(bet.type,bet.lean);
+    const spRow=buildSPRow(g);
+    const chips=buildChips(g);
+    const awayLS=vf(g,'Away Lineup Score'),homeLS=vf(g,'Home Lineup Score');
+    const lsChips=buildLineupChips(awayLS,homeLS);
+    const ipNote=bet.note?`<div class="suppressed-notice">⚠ ${bet.note}</div>`:'';
+    const oddsHtml=buildCardOddsLine(bet,g);
+    // Quality score indicator
+    const quality=scorePlayQuality(g,bet.market,bet.lean);
+    const qColour=quality>=65?'var(--green)':quality>=45?'var(--yellow)':'var(--muted)';
+    const qBadge=`<span style="font-family:var(--mono);font-size:9px;color:${qColour};border:1px solid ${qColour};border-radius:3px;padding:1px 5px;opacity:.8">Q:${quality}</span>`;
+    card.innerHTML=`
+      <div class="card-header">
+        <div><div class="matchup-name">${bet.matchup}</div><div class="bet-type">${bet.type==='K-Prop'?'K PROP':bet.type==='Fade'?'FADE':bet.market}</div></div>
+        <div style="display:flex;gap:5px;align-items:center">${qBadge}<span class="conf-badge conf-${bet.conf}">${bet.conf}</span></div>
+      </div>
+      <div class="card-body">
+        <div class="lean-value ${leanClass}">${bet.lean}</div>
+        ${oddsHtml}
+        ${spRow}
+        <div class="signals-row">${chips}${lsChips}</div>
+        ${ipNote}
+      </div>`;
+    card.addEventListener('click',()=>openModal(g));
+    grid.appendChild(card);
+  });
+}
+
+function buildCardOddsLine(bet,g){
+  const type=bet.type;
+  if(type==='Total'||type==='TOTAL'||type==='F5'){
+    const isTotal=(type==='Total'||type==='TOTAL');
+    const line=isTotal?v(g,'Total Line'):v(g,'F5 Total Line');
+    const op=isTotal?v(g,'Total Over Price'):v(g,'F5 Over Price');
+    const up=isTotal?v(g,'Total Under Price'):v(g,'F5 Under Price');
+    const vr=v(g,'Total Value Rating');
+    const vrCls=vr.includes('HIGH')?'value-HIGH':vr.includes('FAIR')?'value-FAIR':vr.includes('MARG')?'value-MARG':vr.includes('POOR')?'value-POOR':'';
+    if(!line)return'';
+    const lean=bet.lean;
+    const sidePrice=lean.includes('OVER')||lean.includes('Over')?op:lean.includes('UNDER')||lean.includes('Under')?up:'';
+    return`<div class="odds-line">
+      <span>Line: <strong style="color:var(--text)">${line}</strong></span>
+      ${sidePrice?`<span class="odds-price ${priceCls(sidePrice)}">${sidePrice>0?'+':''}${sidePrice}</span>`:''}
+      ${vr?`<span class="value-tag ${vrCls}">${vr}</span>`:''}
+    </div>`;
+  }
+  if(type==='ML'){
+    const mlH=v(g,'ML Odds Home'),mlA=v(g,'ML Odds Away');
+    const himp=v(g,'ML Home Implied'),aimp=v(g,'ML Away Implied');
+    const lean=bet.lean;
+    const isHome=lean.includes('HOME');
+    const price=isHome?mlH:mlA;
+    const imp=isHome?himp:aimp;
+    const mlNote=v(g,'ML Value Note');
+    if(!price)return'';
+    return`<div class="odds-line">
+      <span class="odds-price ${priceCls(price)}">${price>0?'+':''}${price}</span>
+      ${imp?`<span style="color:var(--muted);font-size:10px">${imp}% implied</span>`:''}
+      ${mlNote?`<span class="signal-chip warn" style="font-size:9px">${mlNote}</span>`:''}
+    </div>`;
+  }
+  return'';
+}
+
+function priceCls(p){const n=parseFloat(p);if(isNaN(n))return'even';return n>0?'dog':'fav';}
+
+function getLeanClass(type,lean){
+  if(type==='Total')return(lean.toLowerCase().includes('over'))?'over':'under';
+  if(type==='NRFI')return'nrfi';if(type==='Fade')return'fade';if(type==='K-Prop')return'kprop';
+  return'';
+}
+
+function buildSPRow(g){
+  const hsp=v(g,'Home SP'),asp=v(g,'Away SP');
+  const hxw=vf(g,'Home SP xwOBA'),axw=vf(g,'Away SP xwOBA');
+  const hkp=v(g,'Home SP K% Platoon')||v(g,'Home SP K%');
+  const akp=v(g,'Away SP K% Platoon')||v(g,'Away SP K%');
+  const hIP=v(g,'Home SP AvgIP'),aIP=v(g,'Away SP AvgIP');
+  function sCls(xw){return xw>=0.340?'weak':xw>0&&xw<=0.300?'strong':'neutral';}
+  function tag(prefix,name,xw,kp,ip){
+    const parts=[];if(xw)parts.push(`xwOBA ${xw}`);if(kp)parts.push(`K% ${kp}%★`);if(ip)parts.push(`${ip}ip`);
+    return`<span class="sp-tag ${sCls(xw)}">${prefix}${name.split(' ').pop()}${parts.length?' — '+parts.join(' · '):''}`;
+  }
+  return`<div class="card-sp-row">${tag('H:',hsp,hxw,hkp,hIP)}${tag('A:',asp,axw,akp,aIP)}</div>`;
+}
+
+function buildLineupChips(awayLS,homeLS){
+  let c='';
+  const lbl=(s,side)=>{
+    if(!s)return'';
+    if(s>=60)return`<span class="signal-chip neg">${side} lineup dangerous (${s})</span>`;
+    if(s>=55)return`<span class="signal-chip warn">${side} lineup above avg (${s})</span>`;
+    if(s>0&&s<=35)return`<span class="signal-chip pos">${side} lineup weak (${s})</span>`;
+    return'';
+  };
+  c+=lbl(awayLS,'Away');c+=lbl(homeLS,'Home');return c;
+}
+
+function buildChips(g){
+  const chips=[];
+  const pf=vf(g,'Park Factor'),env=vf(g,'Env Adj');
+  if(pf>=1.10)chips.push(`<span class="signal-chip neg">PF ${pf} hitter-friendly</span>`);
+  else if(pf>=1.01)chips.push(`<span class="signal-chip warn">PF ${pf} hitter-friendly</span>`);
+  else if(pf>0&&pf<=0.93)chips.push(`<span class="signal-chip pos">PF ${pf} pitcher-friendly</span>`);
+  if(env>=1.0)chips.push(`<span class="signal-chip neg">Env +${env}</span>`);
+  else if(env<=-1.0)chips.push(`<span class="signal-chip pos">Env ${env}</span>`);
+  const hbp=(v(g,'Home BP Grade')).replace(' 🔒','').replace(' 💣','');
+  const abp=(v(g,'Away BP Grade')).replace(' 🔒','').replace(' 💣','');
+  if(hbp&&hbp!=='UNKNOWN'){const cls=(hbp==='ELITE'||hbp==='STRONG')?'pos':(hbp.includes('WEAK')||hbp.includes('VULN'))?'neg':'';chips.push(`<span class="signal-chip ${cls}">Home BP ${hbp}</span>`);}
+  if(abp&&abp!=='UNKNOWN'){const cls=(abp==='ELITE'||abp==='STRONG')?'pos':(abp.includes('WEAK')||abp.includes('VULN'))?'neg':'';chips.push(`<span class="signal-chip ${cls}">Away BP ${abp}</span>`);}
+  const tirH=parseInt(v(g,'Home BP Tired Arms')||0),tirA=parseInt(v(g,'Away BP Tired Arms')||0);
+  if(tirH>=1)chips.push(`<span class="signal-chip neg">${tirH} home tired arm${tirH>1?'s':''}</span>`);
+  if(tirA>=1)chips.push(`<span class="signal-chip neg">${tirA} away tired arm${tirA>1?'s':''}</span>`);
+  const wind=vf(g,'Wind MPH'),wdir=v(g,'Wind Dir'),roof=(v(g,'Roof')).toLowerCase();
+  if(roof==='dome'||roof==='retractable')chips.push(`<span class="signal-chip">Covered</span>`);
+  else if(wind>=8)chips.push(`<span class="signal-chip neu">${wind}mph ${wdir}</span>`);
+  if(v(g,'ML Value Note'))chips.push(`<span class="signal-chip sanity">⚠ ${v(g,'ML Value Note')}</span>`);
+  return chips.join('');
+}
+
+// ── GAME TABLE ───────────────────────────────────────────────
+function renderGameTable(){
+  const tbody=document.getElementById('gameTableBody');
+  tbody.innerHTML='';
+  allGames.forEach(g=>{
+    const tr=document.createElement('tr');
+    tr.addEventListener('click',()=>openModal(g));
+    const awayLS=vf(g,'Away Lineup Score'),homeLS=vf(g,'Home Lineup Score');
+    const lsCol=s=>s>=60?'var(--red)':s>=55?'var(--orange)':s>0&&s<=35?'var(--green)':'var(--muted)';
+    const tl=v(g,'Total Line'),vr=v(g,'Total Value Rating');
+    const f5l=v(g,'F5 Total Line');
+    const vrPill=vr?`<span class="pill ${vr.includes('HIGH')?'pill-green':vr.includes('FAIR')?'pill-teal':vr.includes('POOR')?'pill-orange':'pill-muted'}" style="font-size:9px">${vr.replace(' ⬆','').replace(' ⬇','')}</span>`:'—';
+    tr.innerHTML=`
+      <td class="matchup-cell">${v(g,'Matchup')}</td>
+      <td>${fmtSP(v(g,'Home SP'),v(g,'Home SP xwOBA'))}</td>
+      <td>${fmtSP(v(g,'Away SP'),v(g,'Away SP xwOBA'))}</td>
+      <td style="font-size:11px">
+        <span style="color:${lsCol(awayLS)}">${awayLS||'?'}</span>
+        <span style="color:var(--muted)"> / </span>
+        <span style="color:${lsCol(homeLS)}">${homeLS||'?'}</span>
+      </td>
+      <td>${fmtEnv(g)}</td>
+      <td>${fmtLean(v(g,'ML Lean'),v(g,'ML Conf'),v(g,'ML IP Note'))}</td>
+      <td>${fmtMLOdds(v(g,'ML Odds Home'),v(g,'ML Odds Away'))}</td>
+      <td>${fmtLeanWithLine(v(g,'Total Lean'),v(g,'Total Conf'),tl,v(g,'Total IP Note'))}</td>
+      <td>${tl?`<span style="font-family:var(--mono);font-size:12px;color:var(--text)">${tl}</span>`:'—'}</td>
+      <td>${vrPill}</td>
+      <td>${fmtLeanWithLine(v(g,'F5 Lean'),v(g,'F5 Conf'),f5l,v(g,'F5 IP Note'))}</td>
+      <td>${f5l?`<span style="font-family:var(--mono);font-size:12px;color:var(--muted)">${f5l}</span>`:'—'}</td>
+      <td>${fmtNRFI(v(g,'NRFI'),v(g,'NRFI Conf'),v(g,'NRFI IP Note'))}</td>
+      <td>${fmtBP(v(g,'Home BP Grade'))}</td>
+      <td>${fmtBP(v(g,'Away BP Grade'))}</td>
+      <td>${fmtRain(v(g,'Rain Risk'))}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function fmtSP(name,xwoba){
+  if(!name)return'—';const x=parseFloat(xwoba);
+  const cls=x>=0.340?'pill-red':x>0&&x<=0.300?'pill-green':'pill-muted';
+  return`<span style="font-size:11px">${(name||'').split(' ').pop()}</span> <span class="pill ${cls}">${xwoba||'?'}</span>`;
+}
+function fmtEnv(g){
+  const adj=vf(g,'Env Adj'),pf=vf(g,'Park Factor')||1;
+  const cls=adj>=1.5?'pill-red':adj<=-1.5?'pill-blue':pf>=1.05?'pill-yellow':pf<=0.95?'pill-blue':'pill-muted';
+  return`<span class="pill ${cls}">${adj>=0?'+':''}${adj} (PF ${pf})</span>`;
+}
+function fmtLean(lean,conf,ipNote){
+  if(!lean||lean==='NEUTRAL'||lean==='N/A')return`<span style="color:var(--muted)">—</span>`;
+  if(lean==='SUPPRESSED'){const tip=ipNote?` title="${ipNote}"`:'' ;return`<span class="pill pill-supp"${tip}>SUPP</span>`;}
+  if(lean.includes('AVOID'))return`<span class="pill pill-red">AVOID</span>`;
+  const cls=conf==='HIGH'?'pill-green':conf==='MED'?'pill-yellow':'pill-muted';
+  const short=lean.replace('AWAY (','AWAY!').replace('HOME (','HOME!').replace(')','').replace(' F5 (','↑').replace(')','');
+  return`<span class="pill ${cls}" title="${lean}">${short.length>15?short.substring(0,13)+'…':short}</span>`;
+}
+function fmtLeanWithLine(lean,conf,line,ipNote){
+  const base=fmtLean(lean,conf,ipNote);
+  if(lean==='SUPPRESSED'||!lean||lean==='NEUTRAL')return base;
+  return base;  // line shown in separate column
+}
+function fmtMLOdds(home,away){
+  if(!home&&!away)return`<span style="color:var(--muted);font-size:10px">—</span>`;
+  const h=parseFloat(home),a=parseFloat(away);
+  const hp=`<span class="${h>0?'pill pill-green':'pill pill-red'}" style="font-size:10px">${h>0?'+':''}${h}</span>`;
+  const ap=`<span class="${a>0?'pill pill-green':'pill pill-red'}" style="font-size:10px">${a>0?'+':''}${a}</span>`;
+  return`<span style="font-size:10px;color:var(--muted)">H</span>${hp} <span style="font-size:10px;color:var(--muted)">A</span>${ap}`;
+}
+function fmtNRFI(nrfi,conf,ipNote){
+  if(!nrfi||nrfi.includes('AVOID')||nrfi==='NEUTRAL / AVOID')return`<span style="color:var(--muted)">—</span>`;
+  if(nrfi==='SUPPRESSED'){const tip=ipNote?` title="${ipNote}"`:'' ;return`<span class="pill pill-supp"${tip}>SUPP</span>`;}
+  const cls=conf==='HIGH'?'pill-purple':'pill-muted';
+  return`<span class="pill ${cls}">${nrfi.includes('STRONG')?'STRONG':'LEAN'}</span>`;
+}
+function fmtBP(grade){
+  if(!grade||grade==='UNKNOWN')return`<span style="color:var(--muted)">?</span>`;
+  const g2=grade.replace(' 🔒','').replace(' 💣','');
+  const cls=(g2==='ELITE'||g2==='STRONG')?'pill-green':(g2.includes('WEAK')||g2.includes('VULN'))?'pill-red':'pill-muted';
+  return`<span class="pill ${cls}">${g2}</span>`;
+}
+function fmtRain(rain){
+  if(!rain)return'—';
+  if(rain.includes('HIGH'))return`<span class="pill pill-red">HIGH ⛈</span>`;
+  if(rain.includes('MED'))return`<span class="pill pill-yellow">MED 🌧</span>`;
+  return`<span style="color:var(--muted);font-size:11px">✅</span>`;
+}
+
+// ── MODAL ─────────────────────────────────────────────────────
+function openModal(g){
+  const inner=document.getElementById('modalInner');
+  const hxw=vf(g,'Home SP xwOBA'),axw=vf(g,'Away SP xwOBA');
+  const hkp=v(g,'Home SP K% Platoon')||v(g,'Home SP K%');
+  const akp=v(g,'Away SP K% Platoon')||v(g,'Away SP K%');
+  const hcls=hxw>=0.340?'var(--red)':hxw>0&&hxw<=0.300?'var(--green)':'var(--text)';
+  const acls=axw>=0.340?'var(--red)':axw>0&&axw<=0.300?'var(--green)':'var(--text)';
+  const sColor=s=>s>=60?'var(--red)':s>=55?'var(--orange)':s>0&&s<=35?'var(--green)':'var(--text)';
+  const bpColor=gr=>{const g2=(gr||'').replace(' 🔒','').replace(' 💣','');return(g2==='ELITE'||g2==='STRONG')?'var(--green)':(g2.includes('WEAK')||g2.includes('VULN'))?'var(--red)':'var(--text)';};
+  const bpNotes=(v(g,'Bullpen Notes')||'').split('|').filter(Boolean);
+  const fadeNotes=(v(g,'Fade Notes')||'').split('|').filter(n=>n.trim()!=='No strong fade signal').filter(Boolean);
+  const env=v(g,'Env Adj');const envStr=parseFloat(env)>=0?`+${env}`:env;
+  const ipNotes=[];
+  if(v(g,'ML IP Note').trim())ipNotes.push(`ML: ${v(g,'ML IP Note')}`);
+  if(v(g,'Total IP Note').trim())ipNotes.push(`Total: ${v(g,'Total IP Note')}`);
+  if(v(g,'F5 IP Note').trim())ipNotes.push(`F5: ${v(g,'F5 IP Note')}`);
+  if(v(g,'NRFI IP Note').trim())ipNotes.push(`NRFI: ${v(g,'NRFI IP Note')}`);
+  const sanityNote=v(g,'ML Sanity Note')||v(g,'ML_sanity_note')||'';
+  const awayGrade=v(g,'Away Lineup Grade'),homeGrade=v(g,'Home Lineup Grade');
+
+  // Odds data
+  const mlH=v(g,'ML Odds Home'),mlA=v(g,'ML Odds Away');
+  const mlHimp=v(g,'ML Home Implied'),mlAimp=v(g,'ML Away Implied');
+  const tl=v(g,'Total Line'),top=v(g,'Total Over Price'),tup=v(g,'Total Under Price');
+  const vr=v(g,'Total Value Rating'),vn=v(g,'Total Value Note');
+  const f5mlH=v(g,'F5 ML Home'),f5mlA=v(g,'F5 ML Away');
+  const f5tl=v(g,'F5 Total Line'),f5op=v(g,'F5 Over Price'),f5up=v(g,'F5 Under Price');
+  const bk=v(g,'Odds Bookmaker');
+  const mlNote=v(g,'ML Value Note');
+
+  function fmtSigBox(lean,conf,ipNote){
+    if(!lean||lean==='NEUTRAL'||lean==='N/A')return`<div class="s-val" style="color:var(--muted)">—</div>`;
+    if(lean==='SUPPRESSED')return`<div class="s-val" style="color:var(--muted);font-size:11px;text-decoration:line-through">SUPPRESSED</div><div style="font-size:9px;color:var(--muted);margin-top:2px">${ipNote||''}</div>`;
+    const col=conf==='HIGH'?'var(--green)':conf==='MED'?'var(--yellow)':'var(--muted)';
+    return`<div class="s-val" style="font-size:12px;color:${col}">${lean}</div>`;
+  }
+
+  const vrBannerCls=vr.includes('HIGH')?'HIGH':vr.includes('FAIR')?'FAIR':vr.includes('MARG')?'MARG':vr.includes('POOR')?'POOR':'';
+  const vrColor=vr.includes('HIGH')?'var(--green)':vr.includes('FAIR')?'var(--teal)':vr.includes('POOR')?'var(--orange)':'var(--muted)';
+
+  // Build odds section HTML
+  const oddsHtml=`
+    <div class="modal-section">
+      <h3>Live Odds ${bk?`<span style="color:var(--accent);font-size:9px">via ${bk}</span>`:''}</h3>
+      <div class="stat-grid">
+        <div class="odds-block">
+          <div class="odds-block-title">Moneyline${mlNote?` · <span style="color:var(--yellow);font-size:10px">${mlNote}</span>`:''}</div>
+          ${mlH?`
+          <div class="odds-row">
+            <span class="team">${v(g,'Home Team')||'Home'}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="implied">${mlHimp}%</span>
+              <span class="price" style="color:${parseFloat(mlH)>0?'var(--green)':'var(--red)'}">${parseFloat(mlH)>0?'+':''}${mlH}</span>
+            </div>
+          </div>
+          <div class="odds-row">
+            <span class="team">${v(g,'Away Team')||'Away'}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="implied">${mlAimp}%</span>
+              <span class="price" style="color:${parseFloat(mlA)>0?'var(--green)':'var(--red)'}">${parseFloat(mlA)>0?'+':''}${mlA}</span>
+            </div>
+          </div>`:`<div style="color:var(--muted);font-size:11px">No odds available</div>`}
+        </div>
+        <div class="odds-block">
+          <div class="odds-block-title">Game Total</div>
+          ${tl?`
+          <div class="odds-row">
+            <span class="team">Over ${tl}</span>
+            <span class="price" style="color:var(--green)">${parseFloat(top)>0?'+':''}${top||'—'}</span>
+          </div>
+          <div class="odds-row">
+            <span class="team">Under ${tl}</span>
+            <span class="price" style="color:var(--accent)">${parseFloat(tup)>0?'+':''}${tup||'—'}</span>
+          </div>
+          ${vrBannerCls?`<div class="value-banner ${vrBannerCls}">
+            <span style="color:${vrColor};font-family:var(--mono);font-size:11px;font-weight:500">${vr}</span>
+            ${vn?`<span style="font-size:10px;color:var(--muted)">${vn}</span>`:''}
+          </div>`:''}
+          `:`<div style="color:var(--muted);font-size:11px">No total line available</div>`}
+        </div>
+        <div class="odds-block">
+          <div class="odds-block-title">F5 Odds</div>
+          ${f5mlH?`
+          <div class="odds-row">
+            <span class="team">${v(g,'Home Team')||'Home'} F5 ML</span>
+            <span class="price" style="color:${parseFloat(f5mlH)>0?'var(--green)':'var(--red)'}">${parseFloat(f5mlH)>0?'+':''}${f5mlH}</span>
+          </div>
+          <div class="odds-row">
+            <span class="team">${v(g,'Away Team')||'Away'} F5 ML</span>
+            <span class="price" style="color:${parseFloat(f5mlA)>0?'var(--green)':'var(--red)'}">${parseFloat(f5mlA)>0?'+':''}${f5mlA}</span>
+          </div>`:''}
+          ${f5tl?`
+          <div class="odds-row">
+            <span class="team">F5 Over ${f5tl}</span>
+            <span class="price" style="color:var(--green)">${parseFloat(f5op)>0?'+':''}${f5op||'—'}</span>
+          </div>
+          <div class="odds-row">
+            <span class="team">F5 Under ${f5tl}</span>
+            <span class="price" style="color:var(--accent)">${parseFloat(f5up)>0?'+':''}${f5up||'—'}</span>
+          </div>`:''}
+          ${!f5mlH&&!f5tl?`<div style="color:var(--muted);font-size:11px">F5 odds not available</div>`:''}
+        </div>
+      </div>
+    </div>`;
+
+  inner.innerHTML=`
+    <div class="modal-title">${v(g,'Matchup')}</div>
+    <div class="modal-subtitle">${v(g,'Date')} · ${v(g,'Park')||'?'} · PF ${v(g,'Park Factor')||'?'} · ${(v(g,'Roof')||'open').toUpperCase()}</div>
+    ${oddsHtml}
+    <div class="modal-section">
+      <h3>Starting Pitchers</h3>
+      <div class="stat-grid-4">
+        <div class="stat-box"><div class="s-val" style="color:${acls}">${v(g,'Away SP xwOBA')||'?'}</div><div class="s-lbl">${v(g,'Away SP')||'?'} xwOBA</div></div>
+        <div class="stat-box"><div class="s-val" style="color:${acls}">${akp}%</div><div class="s-lbl">Away Platoon K%★</div></div>
+        <div class="stat-box"><div class="s-val" style="color:${hcls}">${v(g,'Home SP xwOBA')||'?'}</div><div class="s-lbl">${v(g,'Home SP')||'?'} xwOBA</div></div>
+        <div class="stat-box"><div class="s-val" style="color:${hcls}">${hkp}%</div><div class="s-lbl">Home Platoon K%★</div></div>
+        <div class="stat-box"><div class="s-val">${v(g,'Away SP AvgIP')||'?'}</div><div class="s-lbl">Away Avg IP</div></div>
+        <div class="stat-box"><div class="s-val">${v(g,'Away SP K%')||'?'}%</div><div class="s-lbl">Away Overall K%</div></div>
+        <div class="stat-box"><div class="s-val">${v(g,'Home SP AvgIP')||'?'}</div><div class="s-lbl">Home Avg IP</div></div>
+        <div class="stat-box"><div class="s-val">${v(g,'Home SP K%')||'?'}%</div><div class="s-lbl">Home Overall K%</div></div>
+      </div>
+    </div>
+    <div class="modal-section">
+      <h3>Lineup Vulnerability <span style="font-size:9px;font-weight:normal">(Away vs Home SP / Home vs Away SP)</span></h3>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="s-val" style="color:${sColor(vf(g,'Away Lineup Score'))}">${v(g,'Away Lineup Score')||'?'}</div><div class="s-lbl">Away Lineup Score</div>${awayGrade?`<div style="font-size:10px;color:var(--muted);margin-top:3px">${awayGrade}</div>`:''}</div>
+        <div class="stat-box"><div class="s-val" style="color:${sColor(vf(g,'Home Lineup Score'))}">${v(g,'Home Lineup Score')||'?'}</div><div class="s-lbl">Home Lineup Score</div>${homeGrade?`<div style="font-size:10px;color:var(--muted);margin-top:3px">${homeGrade}</div>`:''}</div>
+        <div class="stat-box"><div class="s-val" style="color:var(--accent)">${envStr||'?'}</div><div class="s-lbl">Environment Adj</div></div>
+      </div>
+    </div>
+    <div class="modal-section">
+      <h3>Betting Signals</h3>
+      <div class="stat-grid">
+        <div class="stat-box">${fmtSigBox(v(g,'ML Lean'),v(g,'ML Conf'),v(g,'ML IP Note'))}<div class="s-lbl">ML [${v(g,'ML Conf')||'?'}]</div></div>
+        <div class="stat-box">${fmtSigBox(v(g,'Total Lean'),v(g,'Total Conf'),v(g,'Total IP Note'))}<div class="s-lbl">Total [${v(g,'Total Conf')||'?'}]</div></div>
+        <div class="stat-box">${fmtSigBox(v(g,'F5 Lean'),v(g,'F5 Conf'),v(g,'F5 IP Note'))}<div class="s-lbl">F5 [${v(g,'F5 Conf')||'?'}]</div></div>
+        <div class="stat-box">${fmtSigBox(v(g,'NRFI'),v(g,'NRFI Conf'),v(g,'NRFI IP Note'))}<div class="s-lbl">NRFI [${v(g,'NRFI Conf')||'?'}]</div></div>
+        <div class="stat-box" style="grid-column:span 2"><div class="s-val" style="font-size:11px;color:var(--yellow)">${v(g,'K-Prop Targets')||'None'}</div><div class="s-lbl">K-Prop Targets ★</div></div>
+      </div>
+      ${sanityNote?`<div class="full-note warn" style="margin-top:8px">⚠ ${sanityNote}</div>`:''}
+      ${ipNotes.length?`<div class="full-note supp" style="margin-top:8px">${ipNotes.join('<br>')}</div>`:''}
+    </div>
+    <div class="modal-section">
+      <h3>Bullpens</h3>
+      <div class="bp-grid">
+        <div class="bp-box"><div class="bp-team">AWAY — ${v(g,'Away Team')||'?'}</div><div class="bp-grade" style="color:${bpColor(v(g,'Away BP Grade'))}">${v(g,'Away BP Grade').replace(' 🔒','').replace(' 💣','')||'?'}</div><div class="bp-score">Score: ${v(g,'Away BP Score')||'?'} · Closer: ${v(g,'Away Closer')||'?'}</div>${parseInt(v(g,'Away BP Tired Arms')||0)>0?`<div style="color:var(--red);font-size:11px;margin-top:3px;font-family:var(--mono)">😴 ${v(g,'Away BP Tired Arms')} tired arm(s)</div>`:''}</div>
+        <div class="bp-box"><div class="bp-team">HOME — ${v(g,'Home Team')||'?'}</div><div class="bp-grade" style="color:${bpColor(v(g,'Home BP Grade'))}">${v(g,'Home BP Grade').replace(' 🔒','').replace(' 💣','')||'?'}</div><div class="bp-score">Score: ${v(g,'Home BP Score')||'?'} · Closer: ${v(g,'Home Closer')||'?'}</div>${parseInt(v(g,'Home BP Tired Arms')||0)>0?`<div style="color:var(--red);font-size:11px;margin-top:3px;font-family:var(--mono)">😴 ${v(g,'Home BP Tired Arms')} tired arm(s)</div>`:''}</div>
+      </div>
+      ${bpNotes.map(n=>`<div class="full-note" style="margin-top:7px">${n.trim()}</div>`).join('')}
+    </div>
+    ${fadeNotes.length?`<div class="modal-section"><h3>Fade Alerts</h3>${fadeNotes.map(n=>`<div class="full-note">${n.trim()}</div>`).join('')}</div>`:''}
+    <div class="modal-section">
+      <h3>Environment</h3>
+      <div class="full-note info">🏟 ${v(g,'Park')||'?'} · PF ${v(g,'Park Factor')||'?'} · ${(v(g,'Roof')||'open').toUpperCase()}<br>🌡 ${v(g,'Temp F')||'?'}°F · 💨 ${v(g,'Wind MPH')||'?'}mph ${v(g,'Wind Dir')||''} · ☔ ${v(g,'Rain Risk')||'?'}</div>
+    </div>`;
+
+  document.getElementById('modalBackdrop').classList.add('open');
+}
+
+function closeModal(e){if(e.target===document.getElementById('modalBackdrop'))closeModalDirect();}
+function closeModalDirect(){document.getElementById('modalBackdrop').classList.remove('open');}
+
+function setFilter(type,val,btn){
+  filters[type]=val;
+  document.querySelectorAll(`.filter-btn[data-filter="${type}"]`).forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');renderBetCards();
+}
+
+function printDashboard(){
+  if(!allGames.length){alert('Load a CSV first before printing.');return;}
+  // Set the print date line
+  const dateEl=document.getElementById('printDate');
+  if(dateEl){
+    const dates=[...new Set(allGames.map(g=>g['Date']))].filter(Boolean);
+    dateEl.textContent=` · ${dates[0]||''}  |  v6 Model`;
+  }
+  // Remove animation delays for print (they cause blank pages)
+  document.querySelectorAll('.bet-card').forEach(c=>{c.style.animationDelay='0s';c.style.opacity='1';c.style.transform='none';});
+  // Ensure targets section is visible for print if data is loaded
+  if(allTargets.length){
+    document.getElementById('targetsSection').style.display='';
+    document.getElementById('targetsWrap').style.display='';
+    // Reset to "All" filter so everything prints, not just current filter view
+    targetFilter='all';
+    renderTargets();
+  }
+  window.print();
+}
+
+let allTargets = [], targetFilter = 'all';
+
+document.getElementById('targetsFile').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    allTargets = parseCSV(ev.target.result);
+    document.getElementById('targetsSection').style.display = '';
+    document.getElementById('targetsWrap').style.display    = '';
+    renderTargets();
+  };
+  r.readAsText(file);
+});
+
+function setTargetFilter(val, btn) {
+  targetFilter = val;
+  document.querySelectorAll('[data-tfilter]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTargets();
+}
+
+function renderTargets() {
+  const tbody = document.getElementById('targetsTableBody');
+  tbody.innerHTML = '';
+
+  // Normalise List values — strip BOM, quotes, whitespace, then match
+  const _norm = s => (s || '').toString().replace(/^\uFEFF/, '').replace(/^"|"$/g, '').trim();
+  const filtered = targetFilter === 'all'
+    ? allTargets
+    : allTargets.filter(r => {
+        const listVal = _norm(r['List'] || r['list'] || r['\uFEFFList'] || '');
+        return listVal === targetFilter;
+      });
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="13" style="color:var(--muted);padding:20px;text-align:center">No targets for this filter.</td></tr>';
+    return;
+  }
+
+  const LIST_LABELS = {
+    'FILTERED':    { label: 'Fade Target',   cls: 'pill-red'    },
+    'K_BB':        { label: 'K% + BB%',      cls: 'pill-yellow' },
+    'ELITE_KPROP': { label: 'Elite K-Prop',  cls: 'pill-green'  },
+    'NRFI':        { label: 'NRFI Target',   cls: 'pill-purple' },
+  };
+
+  filtered.forEach(r => {
+    const tr = document.createElement('tr');
+    const listVal2 = (r['List'] || r['list'] || r['\uFEFFList'] || '').toString().replace(/^\uFEFF/, '').replace(/^"|"$/g, '').trim();
+    const listInfo = LIST_LABELS[listVal2] || { label: listVal2 || '?', cls: 'pill-muted' };
+
+    // Colour code xwOBA
+    const xw    = parseFloat(r['xwOBA']  || 0);
+    const xwCls = xw >= 0.340 ? 'var(--red)' : xw > 0 && xw <= 0.300 ? 'var(--green)' : 'var(--text)';
+
+    // Colour code K%
+    const kpct  = parseFloat(r['K%'] || 0);
+    const kCls  = kpct >= 28 ? 'var(--green)' : kpct >= 24 ? 'var(--yellow)' : 'var(--text)';
+
+    // Colour code HardHit%
+    const hh    = parseFloat(r['HardHit%'] || 0);
+    const hhCls = hh >= 35 ? 'var(--red)' : hh >= 30 ? 'var(--yellow)' : 'var(--text)';
+
+    // Colour code Avg IP
+    const ip    = parseFloat(r['Avg_IP_Start'] || 0);
+    const ipCls = ip < 4.5 ? 'var(--red)' : ip >= 5.5 ? 'var(--green)' : 'var(--muted)';
+
+    // Platoon split indicator
+    const kvl = r['K%_vL'] ? `${r['K%_vL']}%` : '—';
+    const kvr = r['K%_vR'] ? `${r['K%_vR']}%` : '—';
+
+    tr.innerHTML = `
+      <td><span class="pill ${listInfo.cls}">${listInfo.label}</span></td>
+      <td style="font-family:var(--body);font-weight:500">${r['Pitcher'] || '?'}</td>
+      <td style="font-family:var(--mono);color:var(--muted)">${r['Hand'] || '?'}</td>
+      <td style="font-family:var(--mono);color:${kCls}">${r['K%'] || '—'}%</td>
+      <td style="font-family:var(--mono);color:var(--muted)">${r['BB%'] || '—'}%</td>
+      <td style="font-family:var(--mono);color:var(--accent)">${r['K-BB%'] || '—'}%</td>
+      <td style="font-family:var(--mono);color:${xwCls}">${r['xwOBA'] || '—'}</td>
+      <td style="font-family:var(--mono);color:${hhCls}">${r['HardHit%'] || '—'}%</td>
+      <td style="font-family:var(--mono);color:${ipCls}">${r['Avg_IP_Start'] || '—'}</td>
+      <td style="font-family:var(--mono);color:var(--muted)">${kvl}</td>
+      <td style="font-family:var(--mono);color:var(--muted)">${kvr}</td>
+      <td style="font-family:var(--mono);color:${parseFloat(r['TTO_xwOBA']||0)<=0.280?'var(--green)':'var(--muted)'}">${r['TTO_xwOBA'] || '—'}</td>
+      <td style="font-family:var(--mono);color:var(--muted)">${r['TTO_K%'] ? r['TTO_K%']+'%' : '—'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderResults(rows) {
+  // Find or create results section
+  let section = document.getElementById('resultsSection');
+  if (!section) {
+    section = document.createElement('div');
+    section.id = 'resultsSection';
+    section.style.cssText = 'margin:32px 0';
+    document.querySelector('main').appendChild(section);
+  }
+
+  const graded  = rows.filter(r => ['WIN','LOSS','PUSH'].includes((r['Result']||'').trim()));
+  const pending = rows.filter(r => (r['Result']||'').trim() === 'PENDING');
+  const wins    = graded.filter(r => r['Result'] === 'WIN').length;
+  const losses  = graded.filter(r => r['Result'] === 'LOSS').length;
+  const pushes  = graded.filter(r => r['Result'] === 'PUSH').length;
+  const wr      = graded.length ? ((wins + pushes * 0.5) / graded.length * 100).toFixed(1) : '—';
+  const pnlVals = graded.map(r => parseFloat(r['PnL_Units'] || 'NaN')).filter(x => !isNaN(x));
+  const totalPnl = pnlVals.length ? pnlVals.reduce((a,b)=>a+b,0).toFixed(2) : null;
+  const pnlColour = totalPnl === null ? 'var(--muted)' : parseFloat(totalPnl) >= 0 ? 'var(--green)' : 'var(--red)';
+
+  section.innerHTML = `
+    <div class="section-title">📊 RESULTS TRACKER</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin:16px 0">
+      <div class="stat-tile"><div class="val accent">${graded.length}</div><div class="lbl">Graded</div></div>
+      <div class="stat-tile"><div class="val green">${wins}</div><div class="lbl">Wins</div></div>
+      <div class="stat-tile"><div class="val red">${losses}</div><div class="lbl">Losses</div></div>
+      <div class="stat-tile"><div class="val">${pushes}</div><div class="lbl">Pushes</div></div>
+      <div class="stat-tile"><div class="val ${parseFloat(wr)>=55?'green':parseFloat(wr)<45?'red':''}">${wr}%</div><div class="lbl">Win Rate</div></div>
+      ${totalPnl !== null ? `<div class="stat-tile"><div class="val" style="color:${pnlColour}">${parseFloat(totalPnl)>=0?'+':''}${totalPnl}u</div><div class="lbl">P&L</div></div>` : ''}
+      <div class="stat-tile"><div class="val yellow">${pending.length}</div><div class="lbl">Pending</div></div>
+    </div>
+    ${(()=>{
+      const gs=graded.filter(r=>r['Date']&&!isNaN(parseFloat(r['PnL_Units']))).slice().sort((a,b)=>(a['Date']||'').localeCompare(b['Date']||''));
+      if(gs.length<2)return'<div style="margin:20px 0;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.07);text-align:center;color:rgba(255,255,255,0.25);font-size:12px;letter-spacing:1px">CUMULATIVE P&L — not enough graded results yet</div>';
+      let cum=0;
+      const pts=gs.map(r=>{cum+=parseFloat(r['PnL_Units']);return{date:r['Date'],val:parseFloat(cum.toFixed(4))};});
+      const vs=pts.map(p=>p.val),minV=Math.min(0,...vs),maxV=Math.max(0,...vs),rng=maxV-minV||1;
+      const W=900,H=180,PL=52,PR=16,PT=16,PB=32,iW=W-PL-PR,iH=H-PT-PB;
+      const xOf=i=>PL+(i/(pts.length-1))*iW;
+      const yOf=v=>PT+(1-(v-minV)/rng)*iH;
+      const y0=yOf(0);
+      const lp=pts.map((p,i)=>xOf(i)+','+yOf(p.val)).join(' ');
+      const ap='M '+xOf(0)+','+y0+' L '+xOf(0)+','+yOf(pts[0].val)+' '+pts.slice(1).map((p,i)=>'L '+xOf(i+1)+','+yOf(p.val)).join(' ')+' L '+xOf(pts.length-1)+','+y0+' Z';
+      const grid=Array.from({length:5},(_,i)=>{const v=minV+i*(rng/4),y=yOf(v),lbl=(v>=0?'+':'')+v.toFixed(1)+'u';return'<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="rgba(255,255,255,0.06)" stroke-width="1"/><text x="'+(PL-6)+'" y="'+(y+4)+'" text-anchor="end" fill="rgba(255,255,255,0.35)" font-size="10" font-family="monospace">'+lbl+'</text>';}).join('');
+      const zl=minV<0&&maxV>0?'<line x1="'+PL+'" y1="'+y0+'" x2="'+(W-PR)+'" y2="'+y0+'" stroke="rgba(255,255,255,0.2)" stroke-width="1" stroke-dasharray="4,3"/>':'';
+      const xls=[0,...Array.from({length:3},(_,i)=>Math.round((i+1)*(pts.length-1)/4)),pts.length-1];
+      const xlbls=[...new Set(xls)].map(i=>'<text x="'+xOf(i)+'" y="'+(H-4)+'" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="10" font-family="monospace">'+pts[i].date.slice(5)+'</text>').join('');
+      const lx=xOf(pts.length-1),ly=yOf(vs[vs.length-1]),lc=vs[vs.length-1]>=0?'#00e676':'#ff5252';
+      const fv=(vs[vs.length-1]>=0?'+':'')+vs[vs.length-1].toFixed(2)+'u';
+      return'<div style="margin:20px 0 8px;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.07)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:rgba(255,255,255,0.45)">CUMULATIVE P&amp;L (UNITS)</span><span style="font-family:monospace;font-size:13px;font-weight:700;color:'+lc+'">'+fv+'</span></div><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="'+lc+'" stop-opacity="0.25"/><stop offset="100%" stop-color="'+lc+'" stop-opacity="0.02"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>'+grid+zl+xlbls+'<path d="'+ap+'" fill="url(#pnlGrad)"/><polyline points="'+lp+'" fill="none" stroke="'+lc+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="5" fill="'+lc+'" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="3" fill="#111"/></svg></div>';
+    })()}
+    <div class="game-table-wrap" style="max-height:400px;overflow-y:auto">
+      <table>
+        <thead><tr>
+          <th>Date</th><th>Matchup</th><th>Type</th><th>Lean</th>
+          <th>Conf</th><th>Odds</th><th>Line</th><th>Score</th>
+          <th>Result</th><th>P&L</th>
+        </tr></thead>
+        <tbody>
+          ${rows.slice().reverse().map(r => {
+            const res = (r['Result']||'').trim();
+            const resColour = res==='WIN'?'var(--green)':res==='LOSS'?'var(--red)':res==='PUSH'?'var(--yellow)':'var(--muted)';
+            const pnl = parseFloat(r['PnL_Units']||'NaN');
+            const pnlStr = isNaN(pnl) ? '—' : (pnl>=0?'+':'')+pnl.toFixed(2)+'u';
+            const pnlCol = isNaN(pnl)?'var(--muted)':pnl>=0?'var(--green)':'var(--red)';
+            const score = r['Away_Score'] && r['Home_Score'] ? `${r['Away_Score']}-${r['Home_Score']}` : '—';
+            return `<tr>
+              <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${r['Date']||'—'}</td>
+              <td class="matchup-cell" style="font-size:11px">${(r['Matchup']||'—').replace(' @ ','<br><span style="color:var(--muted)">@</span> ')}</td>
+              <td><span class="pill pill-muted">${r['Bet_Type']||'—'}</span></td>
+              <td style="font-size:11px;max-width:140px;white-space:normal">${r['Lean']||'—'}</td>
+              <td><span class="conf-badge conf-${r['Confidence']||'LOW'}">${r['Confidence']||'—'}</span></td>
+              <td style="font-family:var(--mono);font-size:11px">${r['Odds']||'—'}</td>
+              <td style="font-family:var(--mono);font-size:11px">${r['Line']||r['Notes']||'—'}</td>
+              <td style="font-family:var(--mono);font-size:11px">${score}</td>
+              <td style="font-weight:600;color:${resColour}">${res||'PENDING'}</td>
+              <td style="font-family:var(--mono);font-weight:600;color:${pnlCol}">${res==='PENDING'?'—':pnlStr}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function loadSample(){
+  const today=new Date().toISOString().split('T')[0];
+  allGames=[{Date:today,Matchup:'New York Yankees @ Boston Red Sox','Home Team':'Boston Red Sox','Away Team':'New York Yankees','Home SP':'Brayan Bello','Away SP':'Gerrit Cole','Home SP xwOBA':'0.348','Away SP xwOBA':'0.285','Home SP K%':'18.2','Away SP K%':'29.1','Home SP K% Platoon':'27.4','Away SP K% Platoon':'19.8','Home SP AvgIP':'5.1','Away SP AvgIP':'6.2','Away Lineup Score':'64','Home Lineup Score':'51','Park':'Fenway Park','Park Factor':'1.07','Roof':'open','Temp F':'61','Wind MPH':'14','Wind Dir':'NE','Env Adj':'2.3','Rain Risk':'LOW ✅','Home BP Score':'41.2','Home BP Grade':'WEAK','Away BP Score':'71.5','Away BP Grade':'STRONG','Home BP Tired Arms':'2','Away BP Tired Arms':'0','Home Closer':'Kenley Jansen','Away Closer':'Clay Holmes','ML Lean':'AWAY (New York Yankees)','ML Conf':'HIGH','ML IP Note':'','ML Odds Home':'-145','ML Odds Away':'+125','ML Home Implied':'59.2','ML Away Implied':'44.4','ML Value Note':'Model backs underdog at +125','Total Lean':'OVER','Total Conf':'HIGH','Total IP Note':'','Total Line':'8.5','Total Over Price':'-110','Total Under Price':'-110','Total Value Rating':'HIGH VALUE ⬆','Total Value Note':'Model expects ~9.3 runs vs line 8.5 (+0.8)','F5 Lean':'AWAY F5 (New York Yankees)','F5 Conf':'HIGH','F5 IP Note':'','F5 ML Home':'-130','F5 ML Away':'+110','F5 Total Line':'4.5','F5 Over Price':'-105','F5 Under Price':'-115','Odds Bookmaker':'DraftKings','NRFI':'NEUTRAL / AVOID','NRFI Conf':'LOW','NRFI IP Note':'','K-Prop Targets':'Gerrit Cole (platoon K% 29.1% — platoon-weighted: 1×L(22.4%) + 7×R(30.1%) = 29.1%)','Fade Notes':'No strong fade signal','Bullpen Notes':'Away closer: Clay Holmes ✅ AVAILABLE | 😴 Boston Red Sox bullpen fatigue'}];
+  render();
+}
+
+document.getElementById('emptyState').style.display='block';
+autoLoadAll();
+</script>
+</body>
+</html>
