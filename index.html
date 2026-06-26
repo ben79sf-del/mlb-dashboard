@@ -379,13 +379,15 @@ async function fetchWithTimeout(url, ms=10000) {
 }
 
 async function fetchViaProxy(rawUrl) {
-  // Daily cache-bust so CDN always serves today's file
-  const bust = '?t=' + new Date().toISOString().split('T')[0];
+  // Hourly cache-bust so CDN always serves fresh data
+  const bust = '?t=' + new Date().toISOString().slice(0,13).replace('T','-'); // hourly cache-bust
+  // Force a unique query string to bypass all CDN caches
+  const noBust = '?nocache=' + Date.now();
   const cdnUrl    = toJsdelivr(rawUrl) + bust;
-  const directUrl = rawUrl + bust;
+  const directUrl = rawUrl + noBust;   // direct Gist with ms-precision bust
 
-  // Try jsDelivr first (CORS-safe), then direct Gist URL as fallback
-  for (const url of [cdnUrl, directUrl]) {
+  // Try direct Gist first (freshest), then jsDelivr CDN
+  for (const url of [directUrl, cdnUrl]) {
     try {
       const res = await fetchWithTimeout(url, 10000);
       if (!res.ok) { console.warn(`Fetch ${url} → HTTP ${res.status}`); continue; }
