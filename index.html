@@ -1253,7 +1253,6 @@ function renderTargets() {
 }
 
 function renderResults(rows) {
-  // Find or create results section
   let section = document.getElementById('resultsSection');
   if (!section) {
     section = document.createElement('div');
@@ -1262,15 +1261,54 @@ function renderResults(rows) {
     document.querySelector('main').appendChild(section);
   }
 
+  const UNIT = 20; // $20 per unit
+
+  // Parse Kelly stake dollars — falls back to $20 (1u flat) for old rows
+  function parseStakeDollars(r) {
+    const sd = parseFloat(r['Stake_Dollars'] || 'NaN');
+    if (!isNaN(sd) && sd > 0) return sd;
+    const ku = parseFloat(r['Kelly_Units'] || 'NaN');
+    if (!isNaN(ku) && ku > 0) return Math.max(5, Math.round(ku * UNIT / 5) * 5);
+    return UNIT; // flat 1u fallback for pre-Kelly rows
+  }
+
+  // Dollar P&L from stake + odds + result
+  function calcDollarPnl(r) {
+    const res = (r['Result'] || '').trim();
+    if (!['WIN','LOSS','PUSH'].includes(res)) return null;
+    const stake = parseStakeDollars(r);
+    // Use stored PnL_Units if available (already Kelly-scaled by Python)
+    const pu = parseFloat(r['PnL_Units'] || 'NaN');
+    if (!isNaN(pu)) {
+      // PnL_Units is already Kelly-units — convert to dollars
+      // For WIN: pu = kelly_units * decimal_profit; for LOSS: pu = -kelly_units
+      // Dollar P&L = pu * UNIT
+      return Math.round(pu * UNIT * 100) / 100;
+    }
+    // Fallback: calculate from odds
+    if (res === 'PUSH') return 0;
+    if (res === 'LOSS') return -stake;
+    const odds = parseFloat(r['Odds'] || 'NaN');
+    if (isNaN(odds)) return stake; // no odds — treat as even money
+    const dec = odds > 0 ? odds / 100 : 100 / Math.abs(odds);
+    return Math.round(dec * stake * 100) / 100;
+  }
+
   const graded  = rows.filter(r => ['WIN','LOSS','PUSH'].includes((r['Result']||'').trim()));
   const pending = rows.filter(r => (r['Result']||'').trim() === 'PENDING');
   const wins    = graded.filter(r => r['Result'] === 'WIN').length;
   const losses  = graded.filter(r => r['Result'] === 'LOSS').length;
   const pushes  = graded.filter(r => r['Result'] === 'PUSH').length;
   const wr      = graded.length ? ((wins + pushes * 0.5) / graded.length * 100).toFixed(1) : '—';
-  const pnlVals = graded.map(r => parseFloat(r['PnL_Units'] || 'NaN')).filter(x => !isNaN(x));
-  const totalPnl = pnlVals.length ? pnlVals.reduce((a,b)=>a+b,0).toFixed(2) : null;
-  const pnlColour = totalPnl === null ? 'var(--muted)' : parseFloat(totalPnl) >= 0 ? 'var(--green)' : 'var(--red)';
+
+  // Total dollar P&L
+  const pnlDollars = graded.map(r => calcDollarPnl(r)).filter(x => x !== null);
+  const totalPnlDollars = pnlDollars.length ? pnlDollars.reduce((a,b)=>a+b,0) : null;
+  const totalPnlStr = totalPnlDollars === null ? '—' : (totalPnlDollars >= 0 ? '+$' : '-$') + Math.abs(Math.round(totalPnlDollars));
+  const pnlColour = totalPnlDollars === null ? 'var(--muted)' : totalPnlDollars >= 0 ? 'var(--green)' : 'var(--red)';
+
+  // Total staked
+  const totalStaked = rows.filter(r=>r['Stake_Dollars']).reduce((a,r)=>a+parseStakeDollars(r),0);
 
   section.innerHTML = `
     <div class="section-title">📊 RESULTS TRACKER</div>
@@ -1280,43 +1318,49 @@ function renderResults(rows) {
       <div class="stat-tile"><div class="val red">${losses}</div><div class="lbl">Losses</div></div>
       <div class="stat-tile"><div class="val">${pushes}</div><div class="lbl">Pushes</div></div>
       <div class="stat-tile"><div class="val ${parseFloat(wr)>=55?'green':parseFloat(wr)<45?'red':''}">${wr}%</div><div class="lbl">Win Rate</div></div>
-      ${totalPnl !== null ? `<div class="stat-tile"><div class="val" style="color:${pnlColour}">${parseFloat(totalPnl)>=0?'+':''}${totalPnl}u</div><div class="lbl">P&L</div></div>` : ''}
+      ${totalPnlDollars !== null ? `<div class="stat-tile"><div class="val" style="color:${pnlColour}">${totalPnlStr}</div><div class="lbl">P&L ($)</div></div>` : ''}
       <div class="stat-tile"><div class="val yellow">${pending.length}</div><div class="lbl">Pending</div></div>
     </div>
     ${(()=>{
-      const gs=graded.filter(r=>r['Date']&&!isNaN(parseFloat(r['PnL_Units']))).slice().sort((a,b)=>(a['Date']||'').localeCompare(b['Date']||''));
-      if(gs.length<2)return'<div style="margin:20px 0;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.07);text-align:center;color:rgba(255,255,255,0.25);font-size:12px;letter-spacing:1px">CUMULATIVE P&L — not enough graded results yet</div>';
-      let cum=0;
-      const pts=gs.map(r=>{cum+=parseFloat(r['PnL_Units']);return{date:r['Date'],val:parseFloat(cum.toFixed(4))};});
-      const vs=pts.map(p=>p.val),minV=Math.min(0,...vs),maxV=Math.max(0,...vs),rng=maxV-minV||1;
-      const W=900,H=180,PL=52,PR=16,PT=16,PB=32,iW=W-PL-PR,iH=H-PT-PB;
-      const xOf=i=>PL+(i/(pts.length-1))*iW;
-      const yOf=v=>PT+(1-(v-minV)/rng)*iH;
-      const y0=yOf(0);
-      const lp=pts.map((p,i)=>xOf(i)+','+yOf(p.val)).join(' ');
-      const ap='M '+xOf(0)+','+y0+' L '+xOf(0)+','+yOf(pts[0].val)+' '+pts.slice(1).map((p,i)=>'L '+xOf(i+1)+','+yOf(p.val)).join(' ')+' L '+xOf(pts.length-1)+','+y0+' Z';
-      const grid=Array.from({length:5},(_,i)=>{const v=minV+i*(rng/4),y=yOf(v),lbl=(v>=0?'+':'')+v.toFixed(1)+'u';return'<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="rgba(255,255,255,0.06)" stroke-width="1"/><text x="'+(PL-6)+'" y="'+(y+4)+'" text-anchor="end" fill="rgba(255,255,255,0.35)" font-size="10" font-family="monospace">'+lbl+'</text>';}).join('');
-      const zl=minV<0&&maxV>0?'<line x1="'+PL+'" y1="'+y0+'" x2="'+(W-PR)+'" y2="'+y0+'" stroke="rgba(255,255,255,0.2)" stroke-width="1" stroke-dasharray="4,3"/>':'';
-      const xls=[0,...Array.from({length:3},(_,i)=>Math.round((i+1)*(pts.length-1)/4)),pts.length-1];
-      const xlbls=[...new Set(xls)].map(i=>'<text x="'+xOf(i)+'" y="'+(H-4)+'" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="10" font-family="monospace">'+pts[i].date.slice(5)+'</text>').join('');
-      const lx=xOf(pts.length-1),ly=yOf(vs[vs.length-1]),lc=vs[vs.length-1]>=0?'#00e676':'#ff5252';
-      const fv=(vs[vs.length-1]>=0?'+':'')+vs[vs.length-1].toFixed(2)+'u';
-      return'<div style="margin:20px 0 8px;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.07)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:rgba(255,255,255,0.45)">CUMULATIVE P&amp;L (UNITS)</span><span style="font-family:monospace;font-size:13px;font-weight:700;color:'+lc+'">'+fv+'</span></div><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="'+lc+'" stop-opacity="0.25"/><stop offset="100%" stop-color="'+lc+'" stop-opacity="0.02"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>'+grid+zl+xlbls+'<path d="'+ap+'" fill="url(#pnlGrad)"/><polyline points="'+lp+'" fill="none" stroke="'+lc+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="5" fill="'+lc+'" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="3" fill="#111"/></svg></div>';
+      // Build dollar P&L chart — one point per graded bet in date order
+      const gs = graded.filter(r => r['Date'] && calcDollarPnl(r) !== null)
+                       .slice().sort((a,b) => (a['Date']||'').localeCompare(b['Date']||''));
+      if (gs.length < 2) return '<div style="margin:20px 0;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.07);text-align:center;color:rgba(255,255,255,0.25);font-size:12px;letter-spacing:1px">CUMULATIVE P&L — not enough graded results yet</div>';
+      let cum = 0;
+      const pts = gs.map(r => { cum += calcDollarPnl(r); return { date: r['Date'], val: Math.round(cum) }; });
+      const vs = pts.map(p => p.val), minV = Math.min(0,...vs), maxV = Math.max(0,...vs), rng = maxV - minV || 1;
+      const W=900,H=180,PL=64,PR=16,PT=16,PB=32,iW=W-PL-PR,iH=H-PT-PB;
+      const xOf = i => PL+(i/(pts.length-1))*iW;
+      const yOf = v => PT+(1-(v-minV)/rng)*iH;
+      const y0 = yOf(0);
+      const lp = pts.map((p,i) => xOf(i)+','+yOf(p.val)).join(' ');
+      const ap = 'M '+xOf(0)+','+y0+' L '+xOf(0)+','+yOf(pts[0].val)+' '+pts.slice(1).map((p,i)=>'L '+xOf(i+1)+','+yOf(p.val)).join(' ')+' L '+xOf(pts.length-1)+','+y0+' Z';
+      const grid = Array.from({length:5},(_,i)=>{const v=minV+i*(rng/4),y=yOf(v),lbl=(v>=0?'+$':'-$')+Math.abs(Math.round(v));return'<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="rgba(255,255,255,0.06)" stroke-width="1"/><text x="'+(PL-6)+'" y="'+(y+4)+'" text-anchor="end" fill="rgba(255,255,255,0.35)" font-size="10" font-family="monospace">'+lbl+'</text>';}).join('');
+      const zl = minV<0&&maxV>0?'<line x1="'+PL+'" y1="'+y0+'" x2="'+(W-PR)+'" y2="'+y0+'" stroke="rgba(255,255,255,0.2)" stroke-width="1" stroke-dasharray="4,3"/>':'';
+      const xls = [0,...Array.from({length:3},(_,i)=>Math.round((i+1)*(pts.length-1)/4)),pts.length-1];
+      const xlbls = [...new Set(xls)].map(i=>'<text x="'+xOf(i)+'" y="'+(H-4)+'" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="10" font-family="monospace">'+pts[i].date.slice(5)+'</text>').join('');
+      const lx = xOf(pts.length-1), ly = yOf(vs[vs.length-1]), lc = vs[vs.length-1]>=0?'#00e676':'#ff5252';
+      const fv = (vs[vs.length-1]>=0?'+$':'-$')+Math.abs(vs[vs.length-1]);
+      return '<div style="margin:20px 0 8px;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.07)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:rgba(255,255,255,0.45)">CUMULATIVE P&amp;L (AUD)</span><span style="font-family:monospace;font-size:13px;font-weight:700;color:'+lc+'">'+fv+'</span></div><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="'+lc+'" stop-opacity="0.25"/><stop offset="100%" stop-color="'+lc+'" stop-opacity="0.02"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>'+grid+zl+xlbls+'<path d="'+ap+'" fill="url(#pnlGrad)"/><polyline points="'+lp+'" fill="none" stroke="'+lc+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="5" fill="'+lc+'" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="3" fill="#111"/></svg></div>';
     })()}
-    <div class="game-table-wrap" style="max-height:400px;overflow-y:auto">
+    <div class="game-table-wrap" style="max-height:500px;overflow-y:auto">
       <table>
         <thead><tr>
           <th>Date</th><th>Matchup</th><th>Type</th><th>Lean</th>
-          <th>Conf</th><th>Odds</th><th>Line</th><th>Score</th>
+          <th>Conf</th><th>Odds</th><th>Line</th><th>Stake</th><th>Score</th>
           <th>Result</th><th>P&L</th>
         </tr></thead>
         <tbody>
           ${rows.slice().reverse().map(r => {
             const res = (r['Result']||'').trim();
             const resColour = res==='WIN'?'var(--green)':res==='LOSS'?'var(--red)':res==='PUSH'?'var(--yellow)':'var(--muted)';
-            const pnl = parseFloat(r['PnL_Units']||'NaN');
-            const pnlStr = isNaN(pnl) ? '—' : (pnl>=0?'+':'')+pnl.toFixed(2)+'u';
-            const pnlCol = isNaN(pnl)?'var(--muted)':pnl>=0?'var(--green)':'var(--red)';
+            const dollarPnl = calcDollarPnl(r);
+            const pnlStr = dollarPnl === null ? '—' : (dollarPnl >= 0 ? '+$' : '-$') + Math.abs(Math.round(dollarPnl));
+            const pnlCol = dollarPnl === null ? 'var(--muted)' : dollarPnl >= 0 ? 'var(--green)' : 'var(--red)';
+            const stakeD = parseStakeDollars(r);
+            const ku = parseFloat(r['Kelly_Units'] || 'NaN');
+            const stakeStr = !isNaN(ku) && r['Stake_Dollars'] ? `$${stakeD}<span style="color:var(--muted);font-size:10px"> (${ku.toFixed(2)}u)</span>` : `$${stakeD}`;
+            const capApplied = r['Daily_Cap_Applied'] === 'True' || r['Daily_Cap_Applied'] === true;
             const score = r['Away_Score'] && r['Home_Score'] ? `${r['Away_Score']}-${r['Home_Score']}` : '—';
             return `<tr>
               <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${r['Date']||'—'}</td>
@@ -1326,6 +1370,9 @@ function renderResults(rows) {
               <td><span class="conf-badge conf-${r['Confidence']||'LOW'}">${r['Confidence']||'—'}</span></td>
               <td style="font-family:var(--mono);font-size:11px">${r['Odds']||'—'}</td>
               <td style="font-family:var(--mono);font-size:11px">${r['Line']||r['Notes']||'—'}</td>
+              <td style="font-family:var(--mono);font-size:11px${capApplied?' color:var(--yellow)':''}" title="${capApplied?'Daily cap applied':''}">
+                ${stakeStr}${capApplied?' <span style="color:var(--yellow);font-size:9px">CAP</span>':''}
+              </td>
               <td style="font-family:var(--mono);font-size:11px">${score}</td>
               <td style="font-weight:600;color:${resColour}">${res||'PENDING'}</td>
               <td style="font-family:var(--mono);font-weight:600;color:${pnlCol}">${res==='PENDING'?'—':pnlStr}</td>
@@ -1334,6 +1381,9 @@ function renderResults(rows) {
         </tbody>
       </table>
     </div>`;
+}
+
+
 }
 
 function loadSample(){
