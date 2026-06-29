@@ -241,6 +241,16 @@ td.matchup-cell{font-family:var(--body);font-size:13px;font-weight:500;min-width
 .bet-card:nth-child(5){animation-delay:.20s}.bet-card:nth-child(6){animation-delay:.24s}
 @media(max-width:1100px){.summary-rail{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:700px){main{padding:16px};header{padding:0 16px};.bets-grid{grid-template-columns:1fr}}
+.grade-select{appearance:none;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--muted);font-family:var(--mono);font-size:11px;padding:4px 8px;cursor:pointer;transition:all .15s;min-width:90px}
+.grade-select:hover{border-color:rgba(255,255,255,.25)}.grade-select:focus{outline:none;border-color:var(--accent)}
+.grade-select.g-win{border-color:rgba(74,222,128,.5);color:#4ade80;background:rgba(74,222,128,.08)}
+.grade-select.g-loss{border-color:rgba(248,113,113,.5);color:#f87171;background:rgba(248,113,113,.08)}
+.grade-select.g-push{border-color:rgba(250,204,21,.5);color:#facc15;background:rgba(250,204,21,.08)}
+.grade-select.g-void{border-color:rgba(150,150,170,.3);color:#888899;background:rgba(150,150,170,.06)}
+.odds-entry{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 8px;width:80px;transition:all .15s}
+.odds-entry:focus{outline:none;border-color:var(--accent)}.odds-entry::placeholder{color:var(--muted)}
+.save-flash{display:inline-block;font-family:var(--mono);font-size:10px;color:#4ade80;margin-left:6px;opacity:0;transition:opacity .3s}
+.save-flash.show{opacity:1}
 </style>
 </head>
 <body>
@@ -1299,7 +1309,156 @@ function renderTargets() {
   });
 }
 
+// ── RESULTS CACHE (module-level so gradeResult can mutate it) ─────────────────
+let mlbResultsCache = [];
+const RESULTS_GIST_ID = '3c79f6bdd7b4d6d33c5dd0934398be6b';
+const RESULTS_GIST_FILE = 'mlb_results.csv';
+
+const UNIT = 20; // $20 per unit
+
+function parseStakeDollars(r) {
+  const sd = parseFloat(r['Stake_Dollars'] || 'NaN');
+  if (!isNaN(sd) && sd > 0) return sd;
+  const ku = parseFloat(r['Kelly_Units'] || 'NaN');
+  if (!isNaN(ku) && ku > 0) return Math.max(5, Math.round(ku * UNIT / 5) * 5);
+  return UNIT;
+}
+
+function calcDollarPnl(r) {
+  const res = (r['Result'] || '').trim();
+  if (!['WIN','LOSS','PUSH'].includes(res)) return null;
+  const stake = parseStakeDollars(r);
+  const pu = parseFloat(r['PnL_Units'] || 'NaN');
+  if (!isNaN(pu)) return Math.round(pu * UNIT * 100) / 100;
+  if (res === 'PUSH') return 0;
+  if (res === 'LOSS') return -stake;
+  const odds = parseFloat(r['Odds'] || 'NaN');
+  if (isNaN(odds)) return stake;
+  const dec = odds > 0 ? odds / 100 : 100 / Math.abs(odds);
+  return Math.round(dec * stake * 100) / 100;
+}
+
+// ── GRADE A RESULT ─────────────────────────────────────────────────────────────
+async function gradeResult(idx, result, selectEl) {
+  const row = mlbResultsCache[idx];
+  if (!row) return;
+
+  // Colour the dropdown immediately
+  selectEl.className = 'grade-select';
+  if (result==='WIN')  selectEl.classList.add('g-win');
+  if (result==='LOSS') selectEl.classList.add('g-loss');
+  if (result==='PUSH') selectEl.classList.add('g-push');
+  if (result==='VOID') selectEl.classList.add('g-void');
+
+  // If WIN and no odds stored, prompt for decimal odds
+  if (result === 'WIN') {
+    const currentOdds = parseFloat(row['Odds'] || 'NaN');
+    if (isNaN(currentOdds) || currentOdds === 0) {
+      const oddsCell = document.getElementById('odds-input-' + idx);
+      const entered = oddsCell ? parseFloat(oddsCell.value) : NaN;
+      if (!isNaN(entered) && entered !== 0) {
+        row['Odds'] = entered.toString();
+      } else {
+        const manual = prompt('Enter American odds for this WIN (e.g. -110, +150):');
+        if (manual) row['Odds'] = manual.trim();
+      }
+    }
+  }
+
+  // Update result and recalculate PnL
+  row['Result'] = result;
+  const stake = parseStakeDollars(row);
+  if (result === 'WIN') {
+    const odds = parseFloat(row['Odds'] || 'NaN');
+    if (!isNaN(odds) && odds !== 0) {
+      const dec = odds > 0 ? odds / 100 : 100 / Math.abs(odds);
+      const ku = parseFloat(row['Kelly_Units'] || '1');
+      row['PnL_Units'] = (dec * ku).toFixed(3);
+    }
+  } else if (result === 'LOSS') {
+    const ku = parseFloat(row['Kelly_Units'] || '1');
+    row['PnL_Units'] = (-ku).toFixed(3);
+  } else if (result === 'PUSH' || result === 'VOID') {
+    row['PnL_Units'] = '0';
+  }
+
+  // Re-render stats + chart
+  renderResults(mlbResultsCache);
+
+  // Flash save indicator
+  const flash = document.getElementById('grade-flash-' + idx);
+  if (flash) { flash.classList.add('show'); setTimeout(() => flash.classList.remove('show'), 1800); }
+
+  // Push to Gist
+  await pushGradesToGist();
+}
+
+// ── UPDATE ODDS INLINE ─────────────────────────────────────────────────────────
+function updateOdds(idx, value) {
+  const row = mlbResultsCache[idx];
+  if (!row) return;
+  row['Odds'] = value;
+  // If already WIN, recalculate PnL
+  if (row['Result'] === 'WIN') {
+    const odds = parseFloat(value);
+    if (!isNaN(odds) && odds !== 0) {
+      const dec = odds > 0 ? odds / 100 : 100 / Math.abs(odds);
+      const ku = parseFloat(row['Kelly_Units'] || '1');
+      row['PnL_Units'] = (dec * ku).toFixed(3);
+      renderResults(mlbResultsCache);
+    }
+  }
+}
+
+// ── PUSH GRADES TO GIST ────────────────────────────────────────────────────────
+async function pushGradesToGist() {
+  let token = sessionStorage.getItem('mlb_gh_token');
+  if (!token) {
+    token = prompt('Enter your GitHub token to save grades (stored for this session only):');
+    if (!token) return;
+    sessionStorage.setItem('mlb_gh_token', token);
+  }
+
+  const cols = ['Date','Matchup','Game_PK','Bet_Type','Lean','Confidence','Pitcher',
+    'Odds','Decimal_Odds','Implied_Prob','Line','Bookmaker','Home_Score','Away_Score',
+    'Result','PnL_Units','Kelly_Units','Kelly_Units_Raw','Stake_Dollars','Daily_Cap_Applied','Notes'];
+
+  const header = cols.join(',');
+  const csvRows = mlbResultsCache.map(r => {
+    return cols.map(c => {
+      const v = (r[c] || '').toString().replace(/"/g, '""');
+      return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v}"` : v;
+    }).join(',');
+  });
+  const csv = [header, ...csvRows].join('\n');
+
+  try {
+    const resp = await fetch(`https://api.github.com/gists/${RESULTS_GIST_ID}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+      },
+      body: JSON.stringify({ files: { [RESULTS_GIST_FILE]: { content: csv } } })
+    });
+    if (resp.ok) {
+      console.log('MLB grades saved to Gist ✅');
+    } else {
+      console.error('Gist push failed:', resp.status);
+      if (resp.status === 401) {
+        sessionStorage.removeItem('mlb_gh_token');
+        alert('GitHub token invalid — please try again');
+      }
+    }
+  } catch(e) {
+    console.error('Grade push error:', e);
+  }
+}
+
 function renderResults(rows) {
+  mlbResultsCache = rows;
+
   let section = document.getElementById('resultsSection');
   if (!section) {
     section = document.createElement('div');
@@ -1308,123 +1467,110 @@ function renderResults(rows) {
     document.querySelector('main').appendChild(section);
   }
 
-  const UNIT = 20; // $20 per unit
-
-  // Parse Kelly stake dollars — falls back to $20 (1u flat) for old rows
-  function parseStakeDollars(r) {
-    const sd = parseFloat(r['Stake_Dollars'] || 'NaN');
-    if (!isNaN(sd) && sd > 0) return sd;
-    const ku = parseFloat(r['Kelly_Units'] || 'NaN');
-    if (!isNaN(ku) && ku > 0) return Math.max(5, Math.round(ku * UNIT / 5) * 5);
-    return UNIT; // flat 1u fallback for pre-Kelly rows
-  }
-
-  // Dollar P&L from stake + odds + result
-  function calcDollarPnl(r) {
-    const res = (r['Result'] || '').trim();
-    if (!['WIN','LOSS','PUSH'].includes(res)) return null;
-    const stake = parseStakeDollars(r);
-    // Use stored PnL_Units if available (already Kelly-scaled by Python)
-    const pu = parseFloat(r['PnL_Units'] || 'NaN');
-    if (!isNaN(pu)) {
-      // PnL_Units is already Kelly-units — convert to dollars
-      // For WIN: pu = kelly_units * decimal_profit; for LOSS: pu = -kelly_units
-      // Dollar P&L = pu * UNIT
-      return Math.round(pu * UNIT * 100) / 100;
-    }
-    // Fallback: calculate from odds
-    if (res === 'PUSH') return 0;
-    if (res === 'LOSS') return -stake;
-    const odds = parseFloat(r['Odds'] || 'NaN');
-    if (isNaN(odds)) return stake; // no odds — treat as even money
-    const dec = odds > 0 ? odds / 100 : 100 / Math.abs(odds);
-    return Math.round(dec * stake * 100) / 100;
-  }
-
   const graded  = rows.filter(r => ['WIN','LOSS','PUSH'].includes((r['Result']||'').trim()));
   const pending = rows.filter(r => (r['Result']||'').trim() === 'PENDING');
   const wins    = graded.filter(r => r['Result'] === 'WIN').length;
   const losses  = graded.filter(r => r['Result'] === 'LOSS').length;
   const pushes  = graded.filter(r => r['Result'] === 'PUSH').length;
-  const wr      = graded.length ? ((wins + pushes * 0.5) / graded.length * 100).toFixed(1) : '—';
+  const wr      = (graded.length - pushes) > 0 ? ((wins / (graded.length - pushes)) * 100).toFixed(1) : '—';
 
-  // Total dollar P&L
   const pnlDollars = graded.map(r => calcDollarPnl(r)).filter(x => x !== null);
-  const totalPnlDollars = pnlDollars.length ? pnlDollars.reduce((a,b)=>a+b,0) : null;
-  const totalPnlStr = totalPnlDollars === null ? '—' : (totalPnlDollars >= 0 ? '+$' : '-$') + Math.abs(Math.round(totalPnlDollars));
-  const pnlColour = totalPnlDollars === null ? 'var(--muted)' : totalPnlDollars >= 0 ? 'var(--green)' : 'var(--red)';
+  const totalPnl = pnlDollars.length ? pnlDollars.reduce((a,b)=>a+b,0) : null;
+  const totalPnlStr = totalPnl === null ? '—' : (totalPnl >= 0 ? '+$' : '-$') + Math.abs(Math.round(totalPnl));
+  const pnlColour = totalPnl === null ? 'var(--muted)' : totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
 
-  // Total staked
-  const totalStaked = rows.filter(r=>r['Stake_Dollars']).reduce((a,r)=>a+parseStakeDollars(r),0);
+  // Sort: pending first, then settled by date desc
+  const allRows = [...rows];
+  const pendingRows  = allRows.filter(r => (r['Result']||'PENDING').trim() === 'PENDING');
+  const settledRows  = allRows.filter(r => ['WIN','LOSS','PUSH','VOID'].includes((r['Result']||'').trim()))
+                              .sort((a,b) => (b['Date']||'').localeCompare(a['Date']||''));
+
+  function rowHtml(r, globalIdx) {
+    const res = (r['Result']||'PENDING').trim();
+    const dollarPnl = calcDollarPnl(r);
+    const pnlStr = dollarPnl === null ? '—'
+      : dollarPnl > 0 ? `<span style="color:var(--green)">+$${Math.abs(Math.round(dollarPnl))}</span>`
+      : dollarPnl < 0 ? `<span style="color:var(--red)">-$${Math.abs(Math.round(dollarPnl))}</span>`
+      : `<span style="color:var(--muted)">$0</span>`;
+    const stakeD = parseStakeDollars(r);
+    const ku = parseFloat(r['Kelly_Units'] || 'NaN');
+    const stakeStr = !isNaN(ku) ? `$${stakeD} <span style="color:var(--muted);font-size:10px">(${ku.toFixed(2)}u)</span>` : `$${stakeD}`;
+    const capApplied = r['Daily_Cap_Applied'] === 'True';
+    const score = r['Away_Score'] && r['Home_Score'] ? `${r['Away_Score']}-${r['Home_Score']}` : '—';
+    const selCls = res==='WIN'?'g-win':res==='LOSS'?'g-loss':res==='PUSH'?'g-push':res==='VOID'?'g-void':'';
+    const hasOdds = r['Odds'] && r['Odds'] !== '' && r['Odds'] !== 'None';
+    const oddsDisp = hasOdds ? r['Odds'] : `<input id="odds-input-${globalIdx}" class="odds-entry" type="number" placeholder="odds" value="" onchange="updateOdds(${globalIdx}, this.value)" title="Enter American odds (e.g. -110)">`;
+    return `<tr>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${r['Date']||'—'}</td>
+      <td style="font-size:11px">${(r['Matchup']||'—').replace(' @ ','<br><span style="color:var(--muted);font-size:10px">@</span> ')}</td>
+      <td><span class="pill pill-muted" style="font-size:10px">${r['Bet_Type']||'—'}</span></td>
+      <td style="font-size:11px;max-width:160px;white-space:normal;color:var(--muted)">${(r['Lean']||'—').substring(0,60)}${(r['Lean']||'').length>60?'…':''}</td>
+      <td><span class="conf-badge conf-${r['Confidence']||'LOW'}">${r['Confidence']||'—'}</span></td>
+      <td style="font-family:var(--mono);font-size:11px">${oddsDisp}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${r['Line']||'—'}</td>
+      <td style="font-family:var(--mono);font-size:11px${capApplied?' ;color:var(--yellow)':''}">${stakeStr}${capApplied?' <span style="color:var(--yellow);font-size:9px">CAP</span>':''}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${score}</td>
+      <td>${pnlStr}</td>
+      <td>
+        <select class="grade-select ${selCls}" onchange="gradeResult(${globalIdx}, this.value, this)">
+          <option value="PENDING" ${res==='PENDING'?'selected':''}>Pending</option>
+          <option value="WIN"     ${res==='WIN'?'selected':''}>✓ Win</option>
+          <option value="LOSS"    ${res==='LOSS'?'selected':''}>✗ Loss</option>
+          <option value="PUSH"    ${res==='PUSH'?'selected':''}>↔ Push</option>
+          <option value="VOID"    ${res==='VOID'?'selected':''}>∅ Void</option>
+        </select>
+        <span class="save-flash" id="grade-flash-${globalIdx}">saved ✓</span>
+      </td>
+    </tr>`;
+  }
+
+  // P&L chart (same SVG approach as before)
+  const gs = graded.filter(r => r['Date'] && calcDollarPnl(r) !== null)
+                   .slice().sort((a,b) => (a['Date']||'').localeCompare(b['Date']||''));
+  let chartHtml = '<div style="margin:20px 0;padding:16px;background:rgba(255,255,255,.03);border-radius:10px;border:1px solid rgba(255,255,255,.07);text-align:center;color:rgba(255,255,255,.25);font-size:12px;letter-spacing:1px">CUMULATIVE P&amp;L — grade results to see chart</div>';
+  if (gs.length >= 2) {
+    let cum=0;
+    const pts=gs.map(r=>{cum+=calcDollarPnl(r);return{date:r['Date'],val:Math.round(cum)};});
+    const vs=pts.map(p=>p.val),minV=Math.min(0,...vs),maxV=Math.max(0,...vs),rng=maxV-minV||1;
+    const W=900,H=180,PL=64,PR=16,PT=16,PB=32,iW=W-PL-PR,iH=H-PT-PB;
+    const xOf=i=>PL+(i/(pts.length-1))*iW,yOf=v=>PT+(1-(v-minV)/rng)*iH,y0=yOf(0);
+    const lp=pts.map((p,i)=>xOf(i)+','+yOf(p.val)).join(' ');
+    const ap='M '+xOf(0)+','+y0+' L '+xOf(0)+','+yOf(pts[0].val)+' '+pts.slice(1).map((p,i)=>'L '+xOf(i+1)+','+yOf(p.val)).join(' ')+' L '+xOf(pts.length-1)+','+y0+' Z';
+    const grid=Array.from({length:5},(_,i)=>{const v=minV+i*(rng/4),y=yOf(v),lbl=(v>=0?'+$':'-$')+Math.abs(Math.round(v));return'<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="rgba(255,255,255,.06)" stroke-width="1"/><text x="'+(PL-6)+'" y="'+(y+4)+'" text-anchor="end" fill="rgba(255,255,255,.35)" font-size="10" font-family="monospace">'+lbl+'</text>';}).join('');
+    const zl=minV<0&&maxV>0?'<line x1="'+PL+'" y1="'+y0+'" x2="'+(W-PR)+'" y2="'+y0+'" stroke="rgba(255,255,255,.2)" stroke-width="1" stroke-dasharray="4,3"/>':'';
+    const xlbls=[...new Set([0,...Array.from({length:3},(_,i)=>Math.round((i+1)*(pts.length-1)/4)),pts.length-1])].map(i=>'<text x="'+xOf(i)+'" y="'+(H-4)+'" text-anchor="middle" fill="rgba(255,255,255,.35)" font-size="10" font-family="monospace">'+pts[i].date.slice(5)+'</text>').join('');
+    const lx=xOf(pts.length-1),ly=yOf(vs[vs.length-1]),lc=vs[vs.length-1]>=0?'#00e676':'#ff5252',fv=(vs[vs.length-1]>=0?'+$':'-$')+Math.abs(vs[vs.length-1]);
+    chartHtml='<div style="margin:20px 0 8px;padding:16px;background:rgba(255,255,255,.03);border-radius:10px;border:1px solid rgba(255,255,255,.07)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:rgba(255,255,255,.45)">CUMULATIVE P&amp;L (AUD)</span><span style="font-family:monospace;font-size:13px;font-weight:700;color:'+lc+'">'+fv+'</span></div><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="'+lc+'" stop-opacity="0.25"/><stop offset="100%" stop-color="'+lc+'" stop-opacity="0.02"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>'+grid+zl+xlbls+'<path d="'+ap+'" fill="url(#pnlGrad)"/><polyline points="'+lp+'" fill="none" stroke="'+lc+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="5" fill="'+lc+'" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="3" fill="#111"/></svg></div>';
+  }
 
   section.innerHTML = `
-    <div class="section-title">📊 RESULTS TRACKER</div>
+    <div class="section-title">📊 RESULTS TRACKER
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;margin-left:12px;letter-spacing:0">
+        Grade directly — saves to Gist automatically
+      </span>
+    </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin:16px 0">
       <div class="stat-tile"><div class="val accent">${graded.length}</div><div class="lbl">Graded</div></div>
       <div class="stat-tile"><div class="val green">${wins}</div><div class="lbl">Wins</div></div>
       <div class="stat-tile"><div class="val red">${losses}</div><div class="lbl">Losses</div></div>
       <div class="stat-tile"><div class="val">${pushes}</div><div class="lbl">Pushes</div></div>
-      <div class="stat-tile"><div class="val ${parseFloat(wr)>=55?'green':parseFloat(wr)<45?'red':''}">${wr}%</div><div class="lbl">Win Rate</div></div>
-      ${totalPnlDollars !== null ? `<div class="stat-tile"><div class="val" style="color:${pnlColour}">${totalPnlStr}</div><div class="lbl">P&L ($)</div></div>` : ''}
+      <div class="stat-tile"><div class="val ${parseFloat(wr)>=55?'green':parseFloat(wr)<45&&wr!=='—'?'red':''}">${wr}%</div><div class="lbl">Win Rate</div></div>
+      ${totalPnl !== null ? `<div class="stat-tile"><div class="val" style="color:${pnlColour}">${totalPnlStr}</div><div class="lbl">P&L ($)</div></div>` : ''}
       <div class="stat-tile"><div class="val yellow">${pending.length}</div><div class="lbl">Pending</div></div>
     </div>
-    ${(()=>{
-      // Build dollar P&L chart — one point per graded bet in date order
-      const gs = graded.filter(r => r['Date'] && calcDollarPnl(r) !== null)
-                       .slice().sort((a,b) => (a['Date']||'').localeCompare(b['Date']||''));
-      if (gs.length < 2) return '<div style="margin:20px 0;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.07);text-align:center;color:rgba(255,255,255,0.25);font-size:12px;letter-spacing:1px">CUMULATIVE P&L — not enough graded results yet</div>';
-      let cum = 0;
-      const pts = gs.map(r => { cum += calcDollarPnl(r); return { date: r['Date'], val: Math.round(cum) }; });
-      const vs = pts.map(p => p.val), minV = Math.min(0,...vs), maxV = Math.max(0,...vs), rng = maxV - minV || 1;
-      const W=900,H=180,PL=64,PR=16,PT=16,PB=32,iW=W-PL-PR,iH=H-PT-PB;
-      const xOf = i => PL+(i/(pts.length-1))*iW;
-      const yOf = v => PT+(1-(v-minV)/rng)*iH;
-      const y0 = yOf(0);
-      const lp = pts.map((p,i) => xOf(i)+','+yOf(p.val)).join(' ');
-      const ap = 'M '+xOf(0)+','+y0+' L '+xOf(0)+','+yOf(pts[0].val)+' '+pts.slice(1).map((p,i)=>'L '+xOf(i+1)+','+yOf(p.val)).join(' ')+' L '+xOf(pts.length-1)+','+y0+' Z';
-      const grid = Array.from({length:5},(_,i)=>{const v=minV+i*(rng/4),y=yOf(v),lbl=(v>=0?'+$':'-$')+Math.abs(Math.round(v));return'<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="rgba(255,255,255,0.06)" stroke-width="1"/><text x="'+(PL-6)+'" y="'+(y+4)+'" text-anchor="end" fill="rgba(255,255,255,0.35)" font-size="10" font-family="monospace">'+lbl+'</text>';}).join('');
-      const zl = minV<0&&maxV>0?'<line x1="'+PL+'" y1="'+y0+'" x2="'+(W-PR)+'" y2="'+y0+'" stroke="rgba(255,255,255,0.2)" stroke-width="1" stroke-dasharray="4,3"/>':'';
-      const xls = [0,...Array.from({length:3},(_,i)=>Math.round((i+1)*(pts.length-1)/4)),pts.length-1];
-      const xlbls = [...new Set(xls)].map(i=>'<text x="'+xOf(i)+'" y="'+(H-4)+'" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="10" font-family="monospace">'+pts[i].date.slice(5)+'</text>').join('');
-      const lx = xOf(pts.length-1), ly = yOf(vs[vs.length-1]), lc = vs[vs.length-1]>=0?'#00e676':'#ff5252';
-      const fv = (vs[vs.length-1]>=0?'+$':'-$')+Math.abs(vs[vs.length-1]);
-      return '<div style="margin:20px 0 8px;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.07)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:rgba(255,255,255,0.45)">CUMULATIVE P&amp;L (AUD)</span><span style="font-family:monospace;font-size:13px;font-weight:700;color:'+lc+'">'+fv+'</span></div><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="'+lc+'" stop-opacity="0.25"/><stop offset="100%" stop-color="'+lc+'" stop-opacity="0.02"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>'+grid+zl+xlbls+'<path d="'+ap+'" fill="url(#pnlGrad)"/><polyline points="'+lp+'" fill="none" stroke="'+lc+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="5" fill="'+lc+'" filter="url(#glow)"/><circle cx="'+lx+'" cy="'+ly+'" r="3" fill="#111"/></svg></div>';
-    })()}
-    <div class="game-table-wrap" style="max-height:500px;overflow-y:auto">
+    ${chartHtml}
+    <div class="game-table-wrap" style="max-height:600px;overflow-y:auto">
       <table>
         <thead><tr>
           <th>Date</th><th>Matchup</th><th>Type</th><th>Lean</th>
           <th>Conf</th><th>Odds</th><th>Line</th><th>Stake</th><th>Score</th>
-          <th>Result</th><th>P&L</th>
+          <th>P&L</th><th>Grade</th>
         </tr></thead>
         <tbody>
-          ${rows.slice().reverse().map(r => {
-            const res = (r['Result']||'').trim();
-            const resColour = res==='WIN'?'var(--green)':res==='LOSS'?'var(--red)':res==='PUSH'?'var(--yellow)':'var(--muted)';
-            const dollarPnl = calcDollarPnl(r);
-            const pnlStr = dollarPnl === null ? '—' : (dollarPnl >= 0 ? '+$' : '-$') + Math.abs(Math.round(dollarPnl));
-            const pnlCol = dollarPnl === null ? 'var(--muted)' : dollarPnl >= 0 ? 'var(--green)' : 'var(--red)';
-            const stakeD = parseStakeDollars(r);
-            const ku = parseFloat(r['Kelly_Units'] || 'NaN');
-            const stakeStr = !isNaN(ku) && r['Stake_Dollars'] ? `$${stakeD}<span style="color:var(--muted);font-size:10px"> (${ku.toFixed(2)}u)</span>` : `$${stakeD}`;
-            const capApplied = r['Daily_Cap_Applied'] === 'True' || r['Daily_Cap_Applied'] === true;
-            const score = r['Away_Score'] && r['Home_Score'] ? `${r['Away_Score']}-${r['Home_Score']}` : '—';
-            return `<tr>
-              <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${r['Date']||'—'}</td>
-              <td class="matchup-cell" style="font-size:11px">${(r['Matchup']||'—').replace(' @ ','<br><span style="color:var(--muted)">@</span> ')}</td>
-              <td><span class="pill pill-muted">${r['Bet_Type']||'—'}</span></td>
-              <td style="font-size:11px;max-width:140px;white-space:normal">${r['Lean']||'—'}</td>
-              <td><span class="conf-badge conf-${r['Confidence']||'LOW'}">${r['Confidence']||'—'}</span></td>
-              <td style="font-family:var(--mono);font-size:11px">${r['Odds']||'—'}</td>
-              <td style="font-family:var(--mono);font-size:11px">${r['Line']||r['Notes']||'—'}</td>
-              <td style="font-family:var(--mono);font-size:11px${capApplied?' color:var(--yellow)':''}" title="${capApplied?'Daily cap applied':''}">
-                ${stakeStr}${capApplied?' <span style="color:var(--yellow);font-size:9px">CAP</span>':''}
-              </td>
-              <td style="font-family:var(--mono);font-size:11px">${score}</td>
-              <td style="font-weight:600;color:${resColour}">${res||'PENDING'}</td>
-              <td style="font-family:var(--mono);font-weight:600;color:${pnlCol}">${res==='PENDING'?'—':pnlStr}</td>
-            </tr>`;
-          }).join('')}
+          ${pendingRows.length ? `<tr><td colspan="11" style="padding:8px 12px;font-family:var(--mono);font-size:10px;color:var(--yellow);letter-spacing:1px;background:rgba(255,215,64,.05)">⏳ AWAITING RESULT (${pendingRows.length})</td></tr>` : ''}
+          ${pendingRows.map(r => rowHtml(r, rows.indexOf(r))).join('')}
+          ${settledRows.length ? `<tr><td colspan="11" style="padding:8px 12px;font-family:var(--mono);font-size:10px;color:var(--green);letter-spacing:1px;background:rgba(0,230,118,.04)">✅ SETTLED (${settledRows.length})</td></tr>` : ''}
+          ${settledRows.map(r => rowHtml(r, rows.indexOf(r))).join('')}
         </tbody>
       </table>
     </div>`;
