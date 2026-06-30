@@ -1393,21 +1393,56 @@ async function gradeResult(idx, result, selectEl) {
   await pushGradesToGist();
 }
 
-// ── UPDATE ODDS INLINE ─────────────────────────────────────────────────────────
+// ── UPDATE ODDS INLINE — recalculates real Kelly stake from market odds ───────
 function updateOdds(idx, value) {
   const row = mlbResultsCache[idx];
   if (!row) return;
   row['Odds'] = value;
-  // If already WIN, recalculate PnL
-  if (row['Result'] === 'WIN') {
-    const odds = parseFloat(value);
-    if (!isNaN(odds) && odds !== 0) {
+
+  const odds = parseFloat(value);
+  const isPending = (row['Result']||'PENDING').trim() === 'PENDING';
+
+  if (!isNaN(odds) && odds !== 0) {
+    // For PENDING bets with real odds now available: recalculate stake using
+    // proper Kelly from the quality-based edge estimate (same formula as Python).
+    if (isPending) {
+      const dec = odds > 0 ? 1 + odds/100 : 1 + 100/Math.abs(odds);
+      // Recover the original quality-implied edge from Kelly_Units_Raw,
+      // which was sized 0.5u(threshold)→3.0u(quality100) for no-odds markets.
+      const rawKu = parseFloat(row['Kelly_Units_Raw'] || row['Kelly_Units'] || '1');
+      // Treat rawKu as a confidence proxy: map 0.5-3.0u synthetic range to
+      // an edge estimate 0%-15%, same scale Python uses for odds-based markets.
+      const edge = Math.max(0, Math.min(0.15, ((rawKu - 0.5) / 2.5) * 0.15));
+      const KELLY_FRACTION = 0.25;
+      const kellyRaw = dec - 1 > 0 ? KELLY_FRACTION * (edge / (dec - 1)) : 0;
+      let kellyUnits = kellyRaw * 100;
+      kellyUnits = Math.max(0.5, Math.min(5.0, kellyUnits));
+      kellyUnits = Math.round(kellyUnits * 100) / 100;
+
+      row['Kelly_Units'] = kellyUnits.toFixed(2);
+      row['Stake_Dollars'] = Math.max(5, Math.round(kellyUnits * UNIT / 5) * 5).toString();
+      row['Decimal_Odds'] = dec.toFixed(3);
+      row['Implied_Prob'] = (1/dec*100).toFixed(1) + '%';
+    } else if (row['Result'] === 'WIN') {
+      // Already graded WIN — just recompute PnL with the corrected odds
       const dec = odds > 0 ? odds / 100 : 100 / Math.abs(odds);
       const ku = parseFloat(row['Kelly_Units'] || '1');
       row['PnL_Units'] = (dec * ku).toFixed(3);
-      renderResults(mlbResultsCache);
     }
+    renderResults(mlbResultsCache);
   }
+}
+
+// ── BULK ODDS ENTRY MODE ───────────────────────────────────────────────────────
+// Lets you paste/enter odds for every pending bet, recalculate stakes for all,
+// then save once — rather than entering odds one at a time at grading time.
+async function recalculateAllPendingStakes() {
+  const pendingCount = mlbResultsCache.filter(r => (r['Result']||'PENDING').trim()==='PENDING').length;
+  if (pendingCount === 0) { alert('No pending bets to recalculate.'); return; }
+  renderResults(mlbResultsCache);
+  await pushGradesToGist();
+  const flash = document.getElementById('bulk-save-flash');
+  if (flash) { flash.classList.add('show'); setTimeout(()=>flash.classList.remove('show'), 2000); }
 }
 
 // ── PUSH GRADES TO GIST ────────────────────────────────────────────────────────
@@ -1548,6 +1583,7 @@ function renderResults(rows) {
       <span style="font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;margin-left:12px;letter-spacing:0">
         Grade directly — saves to Gist automatically
       </span>
+      ${pending.length > 0 ? `<button onclick="recalculateAllPendingStakes()" style="margin-left:14px;font-family:var(--mono);font-size:10px;background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.3);color:var(--green);border-radius:5px;padding:4px 10px;cursor:pointer;letter-spacing:.5px">↻ Recalc &amp; Save Stakes</button><span class="save-flash" id="bulk-save-flash">saved ✓</span>` : ''}
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin:16px 0">
       <div class="stat-tile"><div class="val accent">${graded.length}</div><div class="lbl">Graded</div></div>
