@@ -4,7 +4,6 @@ on:
   schedule:
     # 8pm Sydney AEST = 10:00 UTC (UTC+10, Apr–Oct)
     # 8pm Sydney AEDT = 09:00 UTC (UTC+11, Oct–Apr)
-    # 10:00 UTC covers both — games starting, pitchers confirmed
     - cron: '0 10 * * *'
   workflow_dispatch:
 
@@ -29,7 +28,7 @@ jobs:
 
       - name: Run MLB Model
         env:
-          GITHUB_TOKEN: ${{ secrets.MLB_GITHUB_TOKEN }}
+          MLB_GH_TOKEN: ${{ secrets.MLB_GITHUB_TOKEN }}
           PYTHONUNBUFFERED: "1"
         run: |
           python "MLB 0606 Odds with Pitcher data.py"
