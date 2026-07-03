@@ -1444,12 +1444,8 @@ async function recalculateAllPendingStakes() {
 
 // ── PUSH GRADES TO GIST ────────────────────────────────────────────────────────
 async function pushGradesToGist() {
-  let token = sessionStorage.getItem('mlb_gh_token');
-  if (!token) {
-    token = prompt('Enter your GitHub token to save grades (stored for this session only):');
-    if (!token) return;
-    sessionStorage.setItem('mlb_gh_token', token);
-  }
+  let token = sessionStorage.getItem('mlb_gh_token') || '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';
+  sessionStorage.setItem('mlb_gh_token', token);
 
   const cols = ['Date','Matchup','Game_PK','Bet_Type','Lean','Confidence','Pitcher',
     'Odds','Decimal_Odds','Implied_Prob','Line','Bookmaker','Home_Score','Away_Score',
