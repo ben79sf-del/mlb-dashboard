@@ -2262,7 +2262,7 @@ def _sync_local_results_log_from_gist():
         try:
             resp = _requests_early.get(
                 f"https://api.github.com/gists/{GIST_IDS['results_log.csv']}",
-                headers={"Authorization": f"token {GITHUB_TOKEN}",
+                headers={"Authorization": f"token {_os_early.environ.get('MLB_GH_TOKEN') or GITHUB_TOKEN}",
                          "Accept": "application/vnd.github.v3+json"},
             )
             if resp.status_code == 200:
@@ -2284,7 +2284,7 @@ def _sync_local_results_log_from_gist():
     try:
         resp = _requests_early.get(
             f"https://api.github.com/gists/{GIST_IDS['results_log.csv']}",
-            headers={"Authorization": f"token {GITHUB_TOKEN}",
+            headers={"Authorization": f"token {_os_early.environ.get('MLB_GH_TOKEN') or GITHUB_TOKEN}",
                      "Accept": "application/vnd.github.v3+json"},
         )
         if resp.status_code != 200:
@@ -3277,10 +3277,12 @@ import requests, json
 
 def _pull_gist_csv(gist_id, gist_filename):
     """Fetch the current live content of a Gist file. Returns raw text or None."""
+    import os
+    token = os.environ.get("MLB_GH_TOKEN") or GITHUB_TOKEN
     resp = requests.get(
         f"https://api.github.com/gists/{gist_id}",
         headers={
-            "Authorization": f"token {GITHUB_TOKEN}",
+            "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         },
     )
@@ -3366,6 +3368,13 @@ def _merge_results_log_with_gist(local_df):
 
 
 def push_csv_to_gist(local_filename):
+    import os
+    # Re-read token at push time — guarantees env var is picked up even if
+    # GITHUB_TOKEN was set before the env was fully initialised
+    token = os.environ.get("MLB_GH_TOKEN") or GITHUB_TOKEN
+    if not token or token == "":
+        print(f"  ❌ No GitHub token available — cannot push {local_filename}")
+        return
     gist_id       = GIST_IDS[local_filename]
     gist_filename = GIST_FILENAMES[local_filename]
 
@@ -3384,7 +3393,7 @@ def push_csv_to_gist(local_filename):
     resp = requests.patch(
         f"https://api.github.com/gists/{gist_id}",
         headers={
-            "Authorization": f"token {GITHUB_TOKEN}",
+            "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         },
         data=json.dumps({"files": {gist_filename: {"content": content}}})
