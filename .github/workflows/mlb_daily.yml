@@ -2,8 +2,10 @@ name: MLB Model — Daily Run
 
 on:
   schedule:
-    # 7pm Sydney AEST = 09:00 UTC (UTC+10, Apr–Oct)
-    - cron: '0 9 * * *'
+    # 8pm Sydney AEST = 10:00 UTC (UTC+10, Apr–Oct)
+    # 8pm Sydney AEDT = 09:00 UTC (UTC+11, Oct–Apr)
+    # 10:00 UTC covers both — games starting, pitchers confirmed
+    - cron: '0 10 * * *'
   workflow_dispatch:
 
 jobs:
