@@ -391,24 +391,21 @@ async function fetchWithTimeout(url, ms=10000) {
 }
 
 async function fetchViaProxy(rawUrl) {
-  // Hourly cache-bust so CDN always serves fresh data
-  const bust = '?t=' + new Date().toISOString().slice(0,13).replace('T','-'); // hourly cache-bust
-  // Force a unique query string to bypass all CDN caches
+  // Always use direct Gist URL with ms-precision cache bust — never jsDelivr
+  // (jsDelivr caches for up to 24hrs and won't reflect fresh Gist pushes)
   const noBust = '?nocache=' + Date.now();
-  const cdnUrl    = toJsdelivr(rawUrl) + bust;
-  const directUrl = rawUrl + noBust;   // direct Gist with ms-precision bust
+  const directUrl = rawUrl + noBust;
 
-  // Try direct Gist first (freshest), then jsDelivr CDN
-  for (const url of [directUrl, cdnUrl]) {
-    try {
-      const res = await fetchWithTimeout(url, 10000);
-      if (!res.ok) { console.warn(`Fetch ${url} → HTTP ${res.status}`); continue; }
+  // Try direct Gist first
+  try {
+    const res = await fetchWithTimeout(directUrl, 10000);
+    if (res.ok) {
       const text = await res.text();
       if (text && text.trim().length > 10 && text.includes(',')) return text;
-    } catch(e) { console.warn(`Fetch failed: ${url}`, e.message); }
-  }
+    }
+  } catch(e) { console.warn(`Direct fetch failed: ${directUrl}`, e.message); }
 
-  // Last resort: try corsproxy.io with the original URL (no cache bust)
+  // Fallback: corsproxy.io
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(rawUrl)}`;
     const res = await fetchWithTimeout(proxyUrl, 10000);
