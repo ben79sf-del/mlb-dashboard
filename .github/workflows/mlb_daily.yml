@@ -3,11 +3,8 @@ name: MLB Model — Daily Run
 on:
   schedule:
     # 7pm Sydney AEST = 09:00 UTC (UTC+10, Apr–Oct)
-    # 7pm Sydney AEDT = 08:00 UTC (UTC+11, Oct–Apr)
-    # Using 09:00 UTC year-round — within 1hr either way, always fine for MLB
     - cron: '0 9 * * *'
   workflow_dispatch:
-    # Allows manual trigger from GitHub Actions tab anytime
 
 jobs:
   run-mlb-model:
@@ -22,7 +19,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
