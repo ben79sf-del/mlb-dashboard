@@ -2232,8 +2232,9 @@ def export_full_cards(game_cards, filename="daily_matchup_full.csv"):
 
 RESULTS_FILE = "results_log.csv"
 
-import requests as _requests_early, json as _json_early
-GITHUB_TOKEN = "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"  # create at github.com/settings/tokens
+import requests as _requests_early, json as _json_early, os as _os_early
+# Use environment variable when running in GitHub Actions, fall back to hardcoded for local runs
+GITHUB_TOKEN = _os_early.environ.get("MLB_GH_TOKEN", "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")
 GIST_IDS = {
     "daily_matchup_full.csv": "2646eb7878b6b52ac71cff0cdeec67ef",
     "pitcher_targets.csv":    "2c6c7f7f94bdb67e901db9baa7d77697",
