@@ -49,8 +49,18 @@ pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 250)
 pd.set_option("display.max_colwidth", None)
 
-today     = date.today().strftime("%Y-%m-%d")
-today_dt  = date.today()
+# Use Sydney time to determine "today" — script runs on UTC servers but
+# we want the date as seen from Sydney (AEST UTC+10 / AEDT UTC+11).
+# This ensures the correct MLB slate is fetched when running at 7pm Sydney.
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    import datetime as _datetime
+    _sydney_now = _datetime.datetime.now(_ZoneInfo("Australia/Sydney"))
+    today_dt  = _sydney_now.date()
+except Exception:
+    today_dt  = date.today()
+today     = today_dt.strftime("%Y-%m-%d")
+print(f"📅  Script date (Sydney time): {today}")
 start_date = f"{today_dt.year}-01-01"
 end_date   = today
 
