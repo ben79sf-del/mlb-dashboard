@@ -3388,8 +3388,15 @@ def push_csv_to_gist(local_filename):
         except Exception as e:
             print(f"  ⚠ Merge step failed, pushing local file unmodified: {e}")
 
+    if not os.path.exists(local_filename):
+        print(f"  ⚠ {local_filename} not found — skipping push")
+        return
     with open(local_filename, "r") as f:
         content = f.read()
+    if not content or content.strip() == "" or len(content) < 50:
+        print(f"  ⚠ {local_filename} is empty — skipping push to avoid overwriting Gist")
+        return
+    print(f"  📄 {local_filename}: {len(content)} bytes, {content.count(chr(10))} lines")
     resp = requests.patch(
         f"https://api.github.com/gists/{gist_id}",
         headers={
@@ -3399,7 +3406,7 @@ def push_csv_to_gist(local_filename):
         data=json.dumps({"files": {gist_filename: {"content": content}}})
     )
     if resp.status_code == 200:
-        print(f"✅ Pushed {gist_filename} to Gist")
+        print(f"✅ Pushed {gist_filename} to Gist ({len(content)} bytes)")
     else:
         print(f"❌ Failed {gist_filename}: {resp.status_code} {resp.text[:100]}")
 
