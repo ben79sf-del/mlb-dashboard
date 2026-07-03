@@ -1,0 +1,40 @@
+name: MLB Model — Daily Run
+
+on:
+  schedule:
+    # 7pm Sydney AEST = 09:00 UTC (UTC+10, Apr–Oct)
+    # 7pm Sydney AEDT = 08:00 UTC (UTC+11, Oct–Apr)
+    # Using 09:00 UTC year-round — within 1hr either way, always fine for MLB
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    # Allows manual trigger from GitHub Actions tab anytime
+
+jobs:
+  run-mlb-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pandas numpy requests pybaseball beautifulsoup4 openpyxl
+
+      - name: Run MLB Model
+        env:
+          GITHUB_TOKEN: ${{ secrets.MLB_GITHUB_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python "MLB 0606 Odds with Pitcher data.py"
+
+      - name: Confirm Gist push
+        run: echo "✅ MLB model run complete — Gist updated"
