@@ -2234,7 +2234,7 @@ RESULTS_FILE = "results_log.csv"
 
 import requests as _requests_early, json as _json_early, os as _os_early
 # Use environment variable when running in GitHub Actions, fall back to hardcoded for local runs
-GITHUB_TOKEN = _os_early.environ.get("MLB_GH_TOKEN", "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")
+GITHUB_TOKEN = _os_early.environ.get("MLB_GH_TOKEN", "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")
 GIST_IDS = {
     "daily_matchup_full.csv": "2646eb7878b6b52ac71cff0cdeec67ef",
     "pitcher_targets.csv":    "2c6c7f7f94bdb67e901db9baa7d77697",
