@@ -1444,11 +1444,11 @@ async function recalculateAllPendingStakes() {
 
 // ── PUSH GRADES TO GIST ────────────────────────────────────────────────────────
 async function pushGradesToGist() {
-  let token = sessionStorage.getItem('mlb_gh_token');
+  let token = localStorage.getItem('mlb_gh_token');
   if (!token) {
-    token = prompt('Enter a GitHub token with "gist" scope to save grades:\n(This is stored only in this browser tab — never saved to the file.)');
+    token = prompt('Enter a GitHub token with "gist" scope to save grades:\n(Saved in this browser only — never written to the file. You\'ll only need to enter this once.)');
     if (!token) { alert('Grade save cancelled — no token entered.'); return; }
-    sessionStorage.setItem('mlb_gh_token', token);
+    localStorage.setItem('mlb_gh_token', token);
   }
 
   const cols = ['Date','Matchup','Game_PK','Bet_Type','Lean','Confidence','Pitcher',
@@ -1479,7 +1479,7 @@ async function pushGradesToGist() {
     } else {
       console.error('Gist push failed:', resp.status);
       if (resp.status === 401) {
-        sessionStorage.removeItem('mlb_gh_token');
+        localStorage.removeItem('mlb_gh_token');
         alert('GitHub token invalid — please try again');
       }
     }
