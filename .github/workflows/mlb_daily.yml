@@ -2,15 +2,19 @@ name: MLB Model — Daily Run
 
 on:
   schedule:
-    # 8pm Sydney AEST = 10:00 UTC (UTC+10, Apr–Oct)
-    # 8pm Sydney AEDT = 09:00 UTC (UTC+11, Oct–Apr)
-    - cron: '0 10 * * *'
+    # Fixed at 09:00 UTC = 7pm Sydney during AEST (Apr–Oct, current period).
+    # NOTE: cron is fixed UTC and does not follow Sydney's daylight saving,
+    # so during AEDT (Oct–Apr) this will land at 8pm Sydney instead of 7pm
+    # (a ~1hr seasonal drift). Using a single line keeps it strictly once
+    # a day — two cron lines (one per DST period) would fire twice daily
+    # since GitHub has no concept of "only active in this half of the year".
+    - cron: '0 9 * * *'
   workflow_dispatch:
 
 jobs:
   run-mlb-model:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repo
