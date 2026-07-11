@@ -1488,6 +1488,114 @@ async function pushGradesToGist() {
   }
 }
 
+function pnlPill(pnl) {
+  if (pnl === null || isNaN(pnl)) return '<span style="color:var(--muted)">—</span>';
+  const r = Math.round(pnl);
+  if (r > 0) return `<span style="color:var(--green)">+$${r}</span>`;
+  if (r < 0) return `<span style="color:var(--red)">-$${Math.abs(r)}</span>`;
+  return '<span style="color:var(--muted)">$0</span>';
+}
+
+function groupStats(list) {
+  const wins   = list.filter(r => r['Result'] === 'WIN').length;
+  const losses = list.filter(r => r['Result'] === 'LOSS').length;
+  const pushes = list.filter(r => r['Result'] === 'PUSH').length;
+  const decided = wins + losses;
+  const wr = decided > 0 ? ((wins / decided) * 100).toFixed(1) : null;
+  const pnlVals = list.map(r => calcDollarPnl(r)).filter(x => x !== null);
+  const pnl = pnlVals.length ? pnlVals.reduce((a,b)=>a+b,0) : null;
+  return { count: list.length, wins, losses, pushes, wr, pnl };
+}
+
+function renderTypeBreakdownHtml(graded) {
+  if (!graded.length) return '';
+  const types = [...new Set(graded.map(r => (r['Bet_Type']||'—').trim()))].sort();
+  const rowsHtml = types.map(t => {
+    const s = groupStats(graded.filter(r => (r['Bet_Type']||'—').trim() === t));
+    const wrStr = s.wr === null ? '—' : s.wr + '%';
+    const wrCls = s.wr === null ? '' : (parseFloat(s.wr) >= 55 ? 'style="color:var(--green)"' : parseFloat(s.wr) < 45 ? 'style="color:var(--red)"' : '');
+    return `<tr>
+      <td style="font-size:11px"><span class="pill pill-muted" style="font-size:10px">${t}</span></td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center">${s.count}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center;color:var(--green)">${s.wins}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center;color:var(--red)">${s.losses}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center;color:var(--muted)">${s.pushes}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center" ${wrCls}>${wrStr}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:right">${pnlPill(s.pnl)}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div style="margin:20px 0;padding:16px;background:rgba(255,255,255,.03);border-radius:10px;border:1px solid rgba(255,255,255,.07)">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:rgba(255,255,255,.65);margin-bottom:10px">📂 RESULTS BY PLAY TYPE</div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="color:var(--muted);font-size:10px;letter-spacing:.5px">
+          <th style="text-align:left;padding:4px 8px">TYPE</th>
+          <th style="text-align:center;padding:4px 8px">GRADED</th>
+          <th style="text-align:center;padding:4px 8px">W</th>
+          <th style="text-align:center;padding:4px 8px">L</th>
+          <th style="text-align:center;padding:4px 8px">P</th>
+          <th style="text-align:center;padding:4px 8px">WIN%</th>
+          <th style="text-align:right;padding:4px 8px">P&amp;L</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderDailyBreakdownHtml(graded) {
+  if (!graded.length) return '';
+  const dates = [...new Set(graded.map(r => (r['Date']||'').trim()).filter(Boolean))].sort().reverse();
+  const todayStr = new Date().toISOString().split('T')[0];
+  const mostRecent = dates[0];
+  const last24 = mostRecent ? groupStats(graded.filter(r => (r['Date']||'').trim() === mostRecent)) : null;
+
+  const rowsHtml = dates.map(d => {
+    const s = groupStats(graded.filter(r => (r['Date']||'').trim() === d));
+    const wrStr = s.wr === null ? '—' : s.wr + '%';
+    const wrCls = s.wr === null ? '' : (parseFloat(s.wr) >= 55 ? 'style="color:var(--green)"' : parseFloat(s.wr) < 45 ? 'style="color:var(--red)"' : '');
+    const isRecent = d === mostRecent;
+    return `<tr ${isRecent ? 'style="background:rgba(0,230,118,.05)"' : ''}>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${d}${isRecent ? ' <span style="color:var(--green);font-size:9px">● latest</span>' : ''}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center">${s.count}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center;color:var(--green)">${s.wins}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center;color:var(--red)">${s.losses}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center;color:var(--muted)">${s.pushes}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:center" ${wrCls}>${wrStr}</td>
+      <td style="font-family:var(--mono);font-size:11px;text-align:right">${pnlPill(s.pnl)}</td>
+    </tr>`;
+  }).join('');
+
+  const last24Html = last24 ? `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="stat-tile"><div class="val">${mostRecent}</div><div class="lbl">Last Graded Day</div></div>
+      <div class="stat-tile"><div class="val accent">${last24.count}</div><div class="lbl">Graded</div></div>
+      <div class="stat-tile"><div class="val green">${last24.wins}</div><div class="lbl">Wins</div></div>
+      <div class="stat-tile"><div class="val red">${last24.losses}</div><div class="lbl">Losses</div></div>
+      <div class="stat-tile"><div class="val ${last24.wr!==null&&parseFloat(last24.wr)>=55?'green':last24.wr!==null&&parseFloat(last24.wr)<45?'red':''}">${last24.wr===null?'—':last24.wr+'%'}</div><div class="lbl">Win Rate</div></div>
+      <div class="stat-tile"><div class="val" style="color:${last24.pnl===null?'var(--muted)':last24.pnl>=0?'var(--green)':'var(--red)'}">${last24.pnl===null?'—':(last24.pnl>=0?'+$':'-$')+Math.abs(Math.round(last24.pnl))}</div><div class="lbl">P&amp;L ($)</div></div>
+    </div>` : '';
+
+  return `
+    <div style="margin:20px 0;padding:16px;background:rgba(255,255,255,.03);border-radius:10px;border:1px solid rgba(255,255,255,.07)">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:rgba(255,255,255,.65);margin-bottom:10px">📅 LAST 24 HOURS &amp; DAILY BREAKDOWN</div>
+      ${last24Html}
+      <div style="max-height:260px;overflow-y:auto">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="color:var(--muted);font-size:10px;letter-spacing:.5px;position:sticky;top:0;background:#0d0d0d">
+          <th style="text-align:left;padding:4px 8px">DATE</th>
+          <th style="text-align:center;padding:4px 8px">GRADED</th>
+          <th style="text-align:center;padding:4px 8px">W</th>
+          <th style="text-align:center;padding:4px 8px">L</th>
+          <th style="text-align:center;padding:4px 8px">P</th>
+          <th style="text-align:center;padding:4px 8px">WIN%</th>
+          <th style="text-align:right;padding:4px 8px">P&amp;L</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      </div>
+    </div>`;
+}
+
 function renderResults(rows) {
   mlbResultsCache = rows;
 
@@ -1591,6 +1699,8 @@ function renderResults(rows) {
       ${totalPnl !== null ? `<div class="stat-tile"><div class="val" style="color:${pnlColour}">${totalPnlStr}</div><div class="lbl">P&L ($)</div></div>` : ''}
       <div class="stat-tile"><div class="val yellow">${pending.length}</div><div class="lbl">Pending</div></div>
     </div>
+    ${renderTypeBreakdownHtml(graded)}
+    ${renderDailyBreakdownHtml(graded)}
     ${chartHtml}
     <div class="game-table-wrap" style="max-height:600px;overflow-y:auto">
       <table>
