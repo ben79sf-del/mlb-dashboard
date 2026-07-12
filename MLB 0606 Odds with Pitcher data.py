@@ -1046,15 +1046,37 @@ def attach_betting_signals(card):
         top = max(eligible, key=lambda b: b["score"])
         if top["score"] < 55:
             continue  # require a genuinely favourable matchup, not just "highest of a weak field"
+        fc["top_batter"] = top
+
+    # Only the single best matchup per game gets tracked plays — if both
+    # starters happen to qualify as Fade Targets, take the stronger batter
+    # matchup rather than logging both (keeps this in line with the
+    # existing MAX_BETS_PER_GAME cap instead of stacking correlated bets).
+    fc_with_batter = [fc for fc in fade_candidates if fc.get("top_batter")]
+    if fc_with_batter:
+        fc = max(fc_with_batter, key=lambda x: x["top_batter"]["score"])
+        top = fc["top_batter"]
+        conf = "HIGH" if top["score"] >= 62 else "MED"
+        context = (f"vs {fc['pitcher']} [{fc['hand']}HP Fade Target — xwOBA {fc['xwoba']:.3f}, "
+                   f"K% {fc['k']:.1f}, HH% {fc['hh']:.1f}] (Score {top['score']:.1f})")
+        side = "away" if fc["opp_team"] == card.get("away_team") else "home"
+
+        # Total Bases Over 1.5 — the power/contact-quality angle (maps onto
+        # the xwOBA + HardHit% components of the Score directly).
         fade_prop_signals.append({
-            "lean": (f"{fc['opp_team']} — target {top['name']} (Score {top['score']:.1f}) "
-                     f"vs {fc['pitcher']} [{fc['hand']}HP Fade Target — xwOBA {fc['xwoba']:.3f}, "
-                     f"K% {fc['k']:.1f}, HH% {fc['hh']:.1f}]"),
-            "conf": "HIGH" if top["score"] >= 62 else "MED",
-            "side": "away" if fc["opp_team"] == card.get("away_team") else "home",
-            "pitcher": fc["pitcher"],
-            "batter": top["name"],
-            "score": top["score"],
+            "lean": f"{fc['opp_team']} — {top['name']} TOTAL BASES OVER 1.5 {context}",
+            "conf": conf, "side": side, "pitcher": fc["pitcher"],
+            "batter": top["name"], "score": top["score"], "bet_type": "FADE_TB",
+        })
+
+        # Strikeout NO (batter to not strike out) — maps onto the K% < 22
+        # component of the Fade Target definition itself. "Record a hit"
+        # was considered and dropped — odds run too short to be worth
+        # tracking as a play.
+        fade_prop_signals.append({
+            "lean": f"{fc['opp_team']} — {top['name']} TO NOT STRIKE OUT {context}",
+            "conf": conf, "side": side, "pitcher": fc["pitcher"],
+            "batter": top["name"], "score": top["score"], "bet_type": "FADE_K",
         })
 
     signals["fade_prop_signals"] = fade_prop_signals
@@ -1231,7 +1253,7 @@ def score_play_quality(card, bet_type, lean=None):
         if env_adj >= 2.0: score += 10
         elif env_adj >= 1.0: score += 5
 
-    elif bet_type == "FADE_PROP":
+    elif bet_type in ("FADE_TB", "FADE_K"):
         # Score a batter-prop lean vs a Fade Target pitcher. Pulls the batter's
         # vulnerability Score and the pitcher's fade strength straight back out
         # of the lean string built in build_matchup_cards().
@@ -1265,7 +1287,8 @@ QUALITY_THRESHOLDS = {
     "NRFI":       45,   # +5 — NRFI sample too small to be loose
     "K_PROP":     40,   # +10 — consistently underperforming, biggest tighten
     "TEAM_TOTAL": 40,   # +5 — new market, be conservative
-    "FADE_PROP":  45,   # new market (2026-07) — batter prop vs Fade Target pitcher
+    "FADE_TB":    45,   # new market (2026-07) — total bases O1.5 vs Fade Target pitcher
+    "FADE_K":     45,   # new market (2026-07) — batter to not strike out vs Fade Target pitcher
 }
 
 # ── Kelly staking constants ───────────────────────────────────────────────────
@@ -2438,7 +2461,7 @@ def _calc_kelly_units(quality_score, odds_american, threshold=40):
     Stake sizing in units.
 
     When odds are available: quarter-Kelly from edge estimate.
-    When odds are None (NRFI, K_PROP, FADE_PROP, TEAM_TOTAL): quality-based
+    When odds are None (NRFI, K_PROP, FADE_TB, FADE_K, TEAM_TOTAL): quality-based
     synthetic stake — higher quality = larger bet, capped at 3.0u since
     there is no odds-based edge validation for these markets.
 
@@ -2500,7 +2523,7 @@ def log_bets_to_results(game_cards):
         for _, row in log.iterrows():
             bt = str(row.get("Bet_Type", ""))
             pitcher = str(row.get("Pitcher", ""))
-            if bt in ("K_PROP", "FADE_PROP", "TEAM_TOTAL"):
+            if bt in ("K_PROP", "FADE_TB", "FADE_K", "TEAM_TOTAL"):
                 # Include pitcher/lean for per-pitcher dedup
                 existing_keys.add((str(row["Date"]), str(row["Matchup"]), bt, pitcher))
             else:
@@ -2655,39 +2678,38 @@ def log_bets_to_results(game_cards):
                 "Notes": "",
             })
 
-        # ── FADE_PROP logging ──────────────────────────────────────────────
-        # Only log the single BEST FADE_PROP signal per game (highest quality),
-        # not both pitchers — prevents 2 correlated bets on one game.
-        fp_candidates = []
+        # ── FADE_TB / FADE_K logging ────────────────────────────────────────
+        # fade_prop_signals now holds exactly two entries (Total Bases O1.5,
+        # Strikeout NO) for the single best fade matchup this game — log
+        # each independently so they're tracked as separate lines in the
+        # results log, gated by their own quality/threshold.
         for fp in signals.get("fade_prop_signals", []):
-            quality = score_play_quality(card, "FADE_PROP", fp["lean"])
-            fp_candidates.append((quality, fp))
-        fp_candidates.sort(key=lambda x: x[0], reverse=True)
-
-        if fp_candidates:
-            quality, fp = fp_candidates[0]
+            bet_type = fp["bet_type"]
             lean = fp["lean"]
             conf = fp["conf"]
             pitcher_name = fp["pitcher"]
-            key  = (today, matchup, "FADE_PROP", pitcher_name)
-            threshold = QUALITY_THRESHOLDS.get("FADE_PROP", 45)
-            if key not in existing_keys and quality >= threshold:
-                existing_keys.add(key)
-                fp_kelly = _calc_kelly_units(quality, None, threshold=QUALITY_THRESHOLDS["FADE_PROP"])
-                new_rows.append({
-                    "Date": today, "Matchup": matchup, "Game_PK": game_pk,
-                    "Bet_Type": "FADE_PROP", "Lean": lean, "Confidence": conf,
-                    "Pitcher": pitcher_name,
-                    "Odds": None, "Implied_Prob": None,
-                    "Line": "", "Bookmaker": "",
-                    "Home_Score": None, "Away_Score": None,
-                    "Result": "PENDING", "PnL_Units": None,
-                    "Kelly_Units_Raw": fp_kelly, "Kelly_Units": fp_kelly,
-                    "Stake_Dollars": None, "Daily_Cap_Applied": False,
-                    "Notes": "Manual odds entry required — batter prop (hits/total bases) vs Fade Target pitcher",
-                })
-            elif key not in existing_keys:
-                print(f"    ⛔ FADE_PROP {lean[:35]} quality {quality} < {threshold} — skipped")
+            quality = score_play_quality(card, bet_type, lean)
+            key  = (today, matchup, bet_type, pitcher_name)
+            threshold = QUALITY_THRESHOLDS.get(bet_type, 45)
+            if key in existing_keys:
+                continue
+            if quality < threshold:
+                print(f"    ⛔ {bet_type} {lean[:35]} quality {quality} < {threshold} — skipped")
+                continue
+            existing_keys.add(key)
+            fp_kelly = _calc_kelly_units(quality, None, threshold=threshold)
+            new_rows.append({
+                "Date": today, "Matchup": matchup, "Game_PK": game_pk,
+                "Bet_Type": bet_type, "Lean": lean, "Confidence": conf,
+                "Pitcher": pitcher_name,
+                "Odds": None, "Implied_Prob": None,
+                "Line": "", "Bookmaker": "",
+                "Home_Score": None, "Away_Score": None,
+                "Result": "PENDING", "PnL_Units": None,
+                "Kelly_Units_Raw": fp_kelly, "Kelly_Units": fp_kelly,
+                "Stake_Dollars": None, "Daily_Cap_Applied": False,
+                "Notes": "Manual odds entry required",
+            })
 
     if new_rows:
         # ── Per-game bet cap — max MAX_BETS_PER_GAME bets on the same matchup ─
