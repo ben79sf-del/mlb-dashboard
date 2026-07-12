@@ -1000,41 +1000,64 @@ def attach_betting_signals(card):
     signals["team_total_signals"] = team_total_signals
 
     # ── BB_PROP signals ────────────────────────────────────────────────────────
-    # OVER walks: fade targets with BB% ≥ 7.0 and IP ≥ 3.5
-    # UNDER walks: K-BB% pitchers with BB% ≤ 7.0, K% ≥ 25, K-BB% ≥ 14
-    bb_prop_signals = []
+    # DISABLED (2026-07) — walks-over props were the worst-performing market
+    # (22.2% win rate over 9 graded bets, -$170) and single-game walk totals
+    # proved too noisy relative to a pitcher's seasonal BB% to keep staking.
+    # Left as an empty list (rather than removed) so any code still reading
+    # this key keeps working — nothing new gets generated or logged.
+    signals["bb_prop_signals"] = []
 
-    for side, pitcher_name, bb_pct, k_pct, kbb_pct, sp_ip, sp_xwoba, is_tbd in [
-        ("home", card.get("home_pitcher",""), card.get("home_pitcher_BB%") or 0,
-         card.get("home_pitcher_K%") or 0, 0, hp_ip, hp_xwoba, hp_is_tbd),
-        ("away", card.get("away_pitcher",""), card.get("away_pitcher_BB%") or 0,
-         card.get("away_pitcher_K%") or 0, 0, ap_ip, ap_xwoba, ap_is_tbd),
-    ]:
-        if is_tbd or not pitcher_name or sp_ip < 3.5:
+    # ── FADE_PROP signals (batter prop vs a Fade Target pitcher) ──────────────
+    # Converts the standalone "Fade Target" pitcher list into an actual play:
+    # when a starter meets the Fade Target profile (xwOBA >= 0.330, HH% >= 28,
+    # K% < 22 — same thresholds used for the Pitcher Target Lists panel), pull
+    # the single most exploitable opposing batter from the lineup vulnerability
+    # breakdown that's already scored specifically against that pitcher's
+    # throwing hand, and surface it as a concrete batter-prop lean.
+    fade_prop_signals = []
+    fade_k_threshold = 22.0
+
+    hp_k = card.get("home_pitcher_K%") or 99
+    ap_k = card.get("away_pitcher_K%") or 99
+
+    fade_candidates = []
+    if (hp_xwoba >= fade_threshold_xwoba and hp_hh >= fade_threshold_hh
+            and hp_k < fade_k_threshold and hp_ip >= 3.5 and not hp_is_tbd):
+        fade_candidates.append({
+            "pitcher": card.get("home_pitcher",""), "hand": card.get("home_pitcher_hand","?"),
+            "xwoba": hp_xwoba, "hh": hp_hh, "k": hp_k,
+            "opp_team": card.get("away_team",""),
+            "opp_breakdown": card.get("away_lineup_breakdown", []),
+        })
+    if (ap_xwoba >= fade_threshold_xwoba and ap_hh >= fade_threshold_hh
+            and ap_k < fade_k_threshold and ap_ip >= 3.5 and not ap_is_tbd):
+        fade_candidates.append({
+            "pitcher": card.get("away_pitcher",""), "hand": card.get("away_pitcher_hand","?"),
+            "xwoba": ap_xwoba, "hh": ap_hh, "k": ap_k,
+            "opp_team": card.get("home_team",""),
+            "opp_breakdown": card.get("home_lineup_breakdown", []),
+        })
+
+    for fc in fade_candidates:
+        eligible = [b for b in fc["opp_breakdown"]
+                    if b.get("xwOBA") is not None and b.get("score") is not None]
+        if not eligible:
             continue
-        kbb = k_pct - bb_pct
+        top = max(eligible, key=lambda b: b["score"])
+        if top["score"] < 55:
+            continue  # require a genuinely favourable matchup, not just "highest of a weak field"
+        fade_prop_signals.append({
+            "lean": (f"{fc['opp_team']} — target {top['name']} (Score {top['score']:.1f}) "
+                     f"vs {fc['pitcher']} [{fc['hand']}HP Fade Target — xwOBA {fc['xwoba']:.3f}, "
+                     f"K% {fc['k']:.1f}, HH% {fc['hh']:.1f}]"),
+            "conf": "HIGH" if top["score"] >= 62 else "MED",
+            "side": "away" if fc["opp_team"] == card.get("away_team") else "home",
+            "pitcher": fc["pitcher"],
+            "batter": top["name"],
+            "score": top["score"],
+        })
 
-        # OVER walks: high BB%, hittable pitcher (fade target profile)
-        if bb_pct >= 7.0 and sp_xwoba >= 0.330 and sp_ip >= 3.5:
-            bb_prop_signals.append({
-                "lean": f"{pitcher_name} WALKS OVER ({bb_pct}% BB, {sp_ip:.1f}ip)",
-                "conf": "HIGH" if bb_pct >= 10 else "MED",
-                "side": side,
-                "direction": "OVER",
-                "pitcher": pitcher_name,
-            })
-
-        # UNDER walks: elite control pitcher (K-BB% target profile)
-        if bb_pct <= 7.0 and k_pct >= 25.0 and kbb >= 14.0 and sp_ip >= 4.5:
-            bb_prop_signals.append({
-                "lean": f"{pitcher_name} WALKS UNDER ({bb_pct}% BB, K-BB% {kbb:.1f})",
-                "conf": "HIGH" if bb_pct <= 5.0 else "MED",
-                "side": side,
-                "direction": "UNDER",
-                "pitcher": pitcher_name,
-            })
-
-    signals["bb_prop_signals"] = bb_prop_signals
+    signals["fade_prop_signals"] = fade_prop_signals
 
     card["signals"] = signals
     return card
@@ -1208,38 +1231,27 @@ def score_play_quality(card, bet_type, lean=None):
         if env_adj >= 2.0: score += 10
         elif env_adj >= 1.0: score += 5
 
-    elif bet_type == "BB_PROP":
-        # Score a walks OVER (fade pitcher) or UNDER (K-BB% pitcher)
-        lean_str   = lean or ""
-        is_over    = "OVER" in lean_str
-        # Extract pitcher name from lean string format "PitcherName WALKS OVER/UNDER X.X"
-        # Use the relevant pitcher's BB% data
-        if is_over:
-            # Fade target — high BB% pitcher, backing walks OVER
-            pitcher_bb = (card.get("home_pitcher_BB%") if "home" in lean_str.lower()
-                          else card.get("away_pitcher_BB%")) or 0
-            if pitcher_bb >= 11: score += 50
-            elif pitcher_bb >= 9: score += 35
-            elif pitcher_bb >= 7: score += 20
-            # Short IP reduces walk opportunities — penalise
-            relevant_ip = hp_ip if "home" in lean_str.lower() else ap_ip
-            if relevant_ip <= 3.5: score -= 20
-            elif relevant_ip <= 4.0: score -= 10
-            # xwOBA context — fade pitchers tend to be hittable, not necessarily walk-prone
-            relevant_xwoba = (hp_xwoba if "home" in lean_str.lower() else ap_xwoba) or 0.320
-            if relevant_xwoba >= 0.360: score += 10
-        else:
-            # K-BB% target — low BB% pitcher, backing walks UNDER
-            pitcher_bb = (card.get("home_pitcher_BB%") if "home" in lean_str.lower()
-                          else card.get("away_pitcher_BB%")) or 99
-            if pitcher_bb <= 5:   score += 50
-            elif pitcher_bb <= 6: score += 35
-            elif pitcher_bb <= 7: score += 25
-            elif pitcher_bb <= 8: score += 15
-            # Long IP helps — more innings means more chances to maintain control
-            relevant_ip = hp_ip if "home" in lean_str.lower() else ap_ip
-            if relevant_ip >= 5.5: score += 15
-            elif relevant_ip >= 5.0: score += 8
+    elif bet_type == "FADE_PROP":
+        # Score a batter-prop lean vs a Fade Target pitcher. Pulls the batter's
+        # vulnerability Score and the pitcher's fade strength straight back out
+        # of the lean string built in build_matchup_cards().
+        lean_str    = lean or ""
+        score_match = re.search(r"Score\s+([\d.]+)", lean_str)
+        xwoba_match = re.search(r"xwOBA\s+([\d.]+)", lean_str)
+        hh_match    = re.search(r"HH%\s+([\d.]+)", lean_str)
+        batter_score = float(score_match.group(1)) if score_match else 50.0
+        pitcher_xwoba = float(xwoba_match.group(1)) if xwoba_match else 0.320
+        pitcher_hh   = float(hh_match.group(1)) if hh_match else 28.0
+
+        if batter_score >= 65: score += 45
+        elif batter_score >= 60: score += 30
+        elif batter_score >= 55: score += 18
+
+        if pitcher_xwoba >= 0.370: score += 20
+        elif pitcher_xwoba >= 0.350: score += 12
+
+        if pitcher_hh >= 35: score += 15
+        elif pitcher_hh >= 30: score += 8
 
     return max(0, min(100, score))
 
@@ -1253,7 +1265,7 @@ QUALITY_THRESHOLDS = {
     "NRFI":       45,   # +5 — NRFI sample too small to be loose
     "K_PROP":     40,   # +10 — consistently underperforming, biggest tighten
     "TEAM_TOTAL": 40,   # +5 — new market, be conservative
-    "BB_PROP":    35,   # +5 — raise slightly, too many marginal fires
+    "FADE_PROP":  45,   # new market (2026-07) — batter prop vs Fade Target pitcher
 }
 
 # ── Kelly staking constants ───────────────────────────────────────────────────
@@ -1414,9 +1426,9 @@ def print_game_card(card):
     tt_sigs = s.get('team_total_signals', [])
     tt_display = ' | '.join(f"{t['lean']} [{t['conf']}]" for t in tt_sigs) if tt_sigs else 'None'
     print(f"  {'TEAM TOTAL':<18} {tt_display}")
-    bb_sigs = s.get('bb_prop_signals', [])
-    bb_display = ' | '.join(f"{b['lean']} [{b['conf']}]" for b in bb_sigs) if bb_sigs else 'None'
-    print(f"  {'BB PROP':<18} {bb_display}")
+    fp_sigs = s.get('fade_prop_signals', [])
+    fp_display = ' | '.join(f"{f['lean']} [{f['conf']}]" for f in fp_sigs) if fp_sigs else 'None'
+    print(f"  {'FADE PROP':<18} {fp_display}")
     print(f"{'─'*62}")
     for fn in s.get("fade_notes", []):
         print(f"  ⚠  {fn}")
@@ -2211,9 +2223,9 @@ def export_full_cards(game_cards, filename="daily_matchup_full.csv"):
             "NRFI":s.get("nrfi_lean"),"NRFI Conf":s.get("nrfi_conf"),
             "NRFI IP Note":s.get("nrfi_ip_note",""),
             "K-Prop Targets":" | ".join(s.get("k_prop_targets",[])),
-            "BB PROP":" | ".join(
-                f"{b['lean']} [{b['conf']}]"
-                for b in s.get("bb_prop_signals", [])
+            "FADE PROP":" | ".join(
+                f"{f['lean']} [{f['conf']}]"
+                for f in s.get("fade_prop_signals", [])
             ),
             "TEAM TOTAL":" | ".join(
                 f"{t['lean']} [{t['conf']}]"
@@ -2234,7 +2246,7 @@ RESULTS_FILE = "results_log.csv"
 
 import requests as _requests_early, json as _json_early, os as _os_early
 # Use environment variable when running in GitHub Actions, fall back to hardcoded for local runs
-GITHUB_TOKEN = _os_early.environ.get("MLB_GH_TOKEN", "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")
+GITHUB_TOKEN = _os_early.environ.get("MLB_GH_TOKEN", "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")
 GIST_IDS = {
     "daily_matchup_full.csv": "2646eb7878b6b52ac71cff0cdeec67ef",
     "pitcher_targets.csv":    "2c6c7f7f94bdb67e901db9baa7d77697",
@@ -2426,7 +2438,7 @@ def _calc_kelly_units(quality_score, odds_american, threshold=40):
     Stake sizing in units.
 
     When odds are available: quarter-Kelly from edge estimate.
-    When odds are None (NRFI, K_PROP, BB_PROP, TEAM_TOTAL): quality-based
+    When odds are None (NRFI, K_PROP, FADE_PROP, TEAM_TOTAL): quality-based
     synthetic stake — higher quality = larger bet, capped at 3.0u since
     there is no odds-based edge validation for these markets.
 
@@ -2488,7 +2500,7 @@ def log_bets_to_results(game_cards):
         for _, row in log.iterrows():
             bt = str(row.get("Bet_Type", ""))
             pitcher = str(row.get("Pitcher", ""))
-            if bt in ("K_PROP", "BB_PROP", "TEAM_TOTAL"):
+            if bt in ("K_PROP", "FADE_PROP", "TEAM_TOTAL"):
                 # Include pitcher/lean for per-pitcher dedup
                 existing_keys.add((str(row["Date"]), str(row["Matchup"]), bt, pitcher))
             else:
@@ -2643,39 +2655,39 @@ def log_bets_to_results(game_cards):
                 "Notes": "",
             })
 
-        # ── BB_PROP logging ───────────────────────────────────────────────
-        # Only log the single BEST BB_PROP signal per game (highest quality),
+        # ── FADE_PROP logging ──────────────────────────────────────────────
+        # Only log the single BEST FADE_PROP signal per game (highest quality),
         # not both pitchers — prevents 2 correlated bets on one game.
-        bb_candidates = []
-        for bb in signals.get("bb_prop_signals", []):
-            quality = score_play_quality(card, "BB_PROP", bb["lean"])
-            bb_candidates.append((quality, bb))
-        bb_candidates.sort(key=lambda x: x[0], reverse=True)
+        fp_candidates = []
+        for fp in signals.get("fade_prop_signals", []):
+            quality = score_play_quality(card, "FADE_PROP", fp["lean"])
+            fp_candidates.append((quality, fp))
+        fp_candidates.sort(key=lambda x: x[0], reverse=True)
 
-        if bb_candidates:
-            quality, bb = bb_candidates[0]
-            lean = bb["lean"]
-            conf = bb["conf"]
-            pitcher_name = bb["pitcher"]
-            key  = (today, matchup, "BB_PROP", pitcher_name)
-            threshold = QUALITY_THRESHOLDS.get("BB_PROP", 30)
+        if fp_candidates:
+            quality, fp = fp_candidates[0]
+            lean = fp["lean"]
+            conf = fp["conf"]
+            pitcher_name = fp["pitcher"]
+            key  = (today, matchup, "FADE_PROP", pitcher_name)
+            threshold = QUALITY_THRESHOLDS.get("FADE_PROP", 45)
             if key not in existing_keys and quality >= threshold:
                 existing_keys.add(key)
-                bb_kelly = _calc_kelly_units(quality, None, threshold=QUALITY_THRESHOLDS["BB_PROP"])
+                fp_kelly = _calc_kelly_units(quality, None, threshold=QUALITY_THRESHOLDS["FADE_PROP"])
                 new_rows.append({
                     "Date": today, "Matchup": matchup, "Game_PK": game_pk,
-                    "Bet_Type": "BB_PROP", "Lean": lean, "Confidence": conf,
+                    "Bet_Type": "FADE_PROP", "Lean": lean, "Confidence": conf,
                     "Pitcher": pitcher_name,
                     "Odds": None, "Implied_Prob": None,
                     "Line": "", "Bookmaker": "",
                     "Home_Score": None, "Away_Score": None,
                     "Result": "PENDING", "PnL_Units": None,
-                    "Kelly_Units_Raw": bb_kelly, "Kelly_Units": bb_kelly,
+                    "Kelly_Units_Raw": fp_kelly, "Kelly_Units": fp_kelly,
                     "Stake_Dollars": None, "Daily_Cap_Applied": False,
-                    "Notes": "Manual odds entry required",
+                    "Notes": "Manual odds entry required — batter prop (hits/total bases) vs Fade Target pitcher",
                 })
             elif key not in existing_keys:
-                print(f"    ⛔ BB_PROP {lean[:35]} quality {quality} < {threshold} — skipped")
+                print(f"    ⛔ FADE_PROP {lean[:35]} quality {quality} < {threshold} — skipped")
 
     if new_rows:
         # ── Per-game bet cap — max MAX_BETS_PER_GAME bets on the same matchup ─
