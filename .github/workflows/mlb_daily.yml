@@ -2,13 +2,18 @@ name: MLB Model — Daily Run
 
 on:
   schedule:
-    # Fixed at 09:00 UTC = 7pm Sydney during AEST (Apr–Oct, current period).
+    # Fixed at 08:12 UTC = 6pm Sydney during AEST (Apr–Oct, current period).
+    # Moved an hour earlier (was 7pm) and off the top-of-hour (:12 instead
+    # of :00) — GitHub Actions scheduled runs queue behind everyone else's
+    # jobs, and that congestion is worst exactly on the hour, which is why
+    # runs were landing 1-3hrs late. An odd minute avoids most of that.
     # NOTE: cron is fixed UTC and does not follow Sydney's daylight saving,
-    # so during AEDT (Oct–Apr) this will land at 8pm Sydney instead of 7pm
-    # (a ~1hr seasonal drift). Using a single line keeps it strictly once
-    # a day — two cron lines (one per DST period) would fire twice daily
-    # since GitHub has no concept of "only active in this half of the year".
-    - cron: '0 9 * * *'
+    # so during AEDT (Oct–Apr) this will land at 7pm Sydney instead of 6pm
+    # (a ~1hr seasonal drift). Kept to a single line so it fires strictly
+    # once a day — two cron lines (one per DST period) would fire twice
+    # daily since GitHub has no concept of "only active in this half of
+    # the year".
+    - cron: '12 8 * * *'
   workflow_dispatch:
 
 jobs:
