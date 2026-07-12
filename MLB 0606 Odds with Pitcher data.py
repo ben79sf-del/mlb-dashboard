@@ -974,8 +974,8 @@ def attach_betting_signals(card):
     fade_threshold_xwoba = 0.330
     fade_threshold_hh    = 28.0
 
-    hp_hh = card.get("home_pitcher_HardHit%") or 0
-    ap_hh = card.get("away_pitcher_HardHit%") or 0
+    hp_hh = card.get("home_pitcher_HH%") or 0
+    ap_hh = card.get("away_pitcher_HH%") or 0
 
     team_total_signals = []
 
@@ -1226,8 +1226,8 @@ def score_play_quality(card, bet_type, lean=None):
         is_away    = "AWAY" in lean_str
         opp_xwoba  = hp_xwoba if is_away else ap_xwoba   # pitcher facing the team we back
         opp_ip     = hp_ip    if is_away else ap_ip
-        opp_hh     = (card.get("home_pitcher_HardHit%") if is_away
-                      else card.get("away_pitcher_HardHit%")) or 28
+        opp_hh     = (card.get("home_pitcher_HH%") if is_away
+                      else card.get("away_pitcher_HH%")) or 28
         our_vuln   = away_vuln if is_away else home_vuln
 
         # Fade pitcher quality — higher xwOBA = more confidence in team total OVER
