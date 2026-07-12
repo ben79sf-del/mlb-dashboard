@@ -287,7 +287,7 @@ td.matchup-cell{font-family:var(--body);font-size:13px;font-weight:500;min-width
     <button class="filter-btn" data-filter="market" data-val="F5"           onclick="setFilter('market','F5',this)">F5</button>
     <button class="filter-btn" data-filter="market" data-val="NRFI"         onclick="setFilter('market','NRFI',this)">NRFI</button>
     <button class="filter-btn" data-filter="market" data-val="K-Prop"       onclick="setFilter('market','K-Prop',this)">K Props</button>
-    <button class="filter-btn" data-filter="market" data-val="BB_PROP"      onclick="setFilter('market','BB_PROP',this)">BB Props</button>
+    <button class="filter-btn" data-filter="market" data-val="FADE_PROP"    onclick="setFilter('market','FADE_PROP',this)">Fade Props</button>
     <button class="filter-btn" data-filter="market" data-val="TEAM_TOTAL"   onclick="setFilter('market','TEAM_TOTAL',this)">Team Total</button>
     <button class="filter-btn" data-filter="market" data-val="Fade"         onclick="setFilter('market','Fade',this)">Fade</button>
     <div class="divider"></div>
@@ -630,12 +630,16 @@ function scorePlayQuality(g, betType, lean){
     const spIP = Math.max(hpIP,apIP);
     if(spIP>=6.0) score+=25; else if(spIP>=5.5) score+=10;
   }
-  else if(betType==='BB_PROP'){
-    const isOver = lean && lean.includes('OVER');
-    const bbMatch = lean && lean.match(/([\d.]+)%\s*BB/);
-    const bb = bbMatch ? parseFloat(bbMatch[1]) : 0;
-    if(isOver){ if(bb>=11) score+=50; else if(bb>=9) score+=35; else if(bb>=7) score+=20; }
-    else      { if(bb<=5)  score+=50; else if(bb<=6) score+=35; else if(bb<=7) score+=25; else if(bb<=8) score+=15; }
+  else if(betType==='FADE_PROP'){
+    const scoreMatch = lean && lean.match(/Score\s+([\d.]+)/);
+    const xwMatch    = lean && lean.match(/xwOBA\s+([\d.]+)/);
+    const hhMatch2   = lean && lean.match(/HH%\s+([\d.]+)/);
+    const batterScore = scoreMatch ? parseFloat(scoreMatch[1]) : 50;
+    const pXw = xwMatch ? parseFloat(xwMatch[1]) : 0.320;
+    const pHh = hhMatch2 ? parseFloat(hhMatch2[1]) : 28;
+    if(batterScore>=65) score+=45; else if(batterScore>=60) score+=30; else if(batterScore>=55) score+=18;
+    if(pXw>=0.370) score+=20; else if(pXw>=0.350) score+=12;
+    if(pHh>=35) score+=15; else if(pHh>=30) score+=8;
   }
   else if(betType==='TEAM_TOTAL'){
     const xwMatch = lean && lean.match(/xwOBA ([\d.]+)/);
@@ -650,7 +654,7 @@ function scorePlayQuality(g, betType, lean){
 
 // Strict mode thresholds per bet type
 const STRICT_THRESHOLDS = {
-  'BB_PROP':    30,
+  'FADE_PROP':  45,
   'TEAM_TOTAL': 35,
   'MONEYLINE': 50,
   'TOTAL':     48,
@@ -731,16 +735,16 @@ function buildBets(games){
       });
     }
 
-    // BB_PROP signals
-    const bbProp=v(g,'BB PROP');
-    if(bbProp&&bbProp!=='None'){
-      bbProp.split('|').forEach(b=>{
-        b=b.trim(); if(!b||b==='None') return;
-        const confMatch = b.match(/\[(HIGH|MED)\]/);
-        const bConf = confMatch ? confMatch[1] : 'MED';
-        const bLean = b.replace(/\s*\[(?:HIGH|MED)\]\s*$/,'').trim();
-        if(!strict || bConf==='HIGH')
-          bets.push({type:'BB_PROP',market:'BB_PROP',lean:bLean,conf:bConf,note:'Manual odds required',matchup,game:g,valueRating:''});
+    // FADE_PROP signals (batter prop vs a Fade Target pitcher)
+    const fadeProp=v(g,'FADE PROP');
+    if(fadeProp&&fadeProp!=='None'){
+      fadeProp.split('|').forEach(f=>{
+        f=f.trim(); if(!f||f==='None') return;
+        const confMatch = f.match(/\[(HIGH|MED)\]/);
+        const fConf = confMatch ? confMatch[1] : 'MED';
+        const fLean = f.replace(/\s*\[(?:HIGH|MED)\]\s*$/,'').trim();
+        if(!strict || fConf==='HIGH')
+          bets.push({type:'FADE_PROP',market:'FADE_PROP',lean:fLean,conf:fConf,note:'Manual odds required — batter prop',matchup,game:g,valueRating:''});
       });
     }
 
@@ -834,7 +838,7 @@ function renderBetCards(){
     const qBadge=`<span style="font-family:var(--mono);font-size:9px;color:${qColour};border:1px solid ${qColour};border-radius:3px;padding:1px 5px;opacity:.8">Q:${quality}</span>`;
     card.innerHTML=`
       <div class="card-header">
-        <div><div class="matchup-name">${bet.matchup}</div><div class="bet-type">${bet.type==='K-Prop'?'K PROP':bet.type==='Fade'?'FADE':bet.type==='BB_PROP'?'BB PROP':bet.type==='TEAM_TOTAL'?'TEAM TOTAL':bet.market}</div></div>
+        <div><div class="matchup-name">${bet.matchup}</div><div class="bet-type">${bet.type==='K-Prop'?'K PROP':bet.type==='Fade'?'FADE':bet.type==='FADE_PROP'?'FADE PROP':bet.type==='TEAM_TOTAL'?'TEAM TOTAL':bet.market}</div></div>
         <div style="display:flex;gap:5px;align-items:center">${qBadge}<span class="conf-badge conf-${bet.conf}">${bet.conf}</span></div>
       </div>
       <div class="card-body">
@@ -889,7 +893,7 @@ function priceCls(p){const n=parseFloat(p);if(isNaN(n))return'even';return n>0?'
 
 function getLeanClass(type,lean){
   if(type==='Total')return(lean.toLowerCase().includes('over'))?'over':'under';
-  if(type==='NRFI')return'nrfi';if(type==='Fade')return'fade';if(type==='K-Prop')return'kprop';if(type==='BB_PROP')return'kprop';if(type==='TEAM_TOTAL')return'total';
+  if(type==='NRFI')return'nrfi';if(type==='Fade')return'fade';if(type==='K-Prop')return'kprop';if(type==='FADE_PROP')return'fade';if(type==='TEAM_TOTAL')return'total';
   return'';
 }
 
