@@ -838,7 +838,7 @@ function renderBetCards(){
     const qBadge=`<span style="font-family:var(--mono);font-size:9px;color:${qColour};border:1px solid ${qColour};border-radius:3px;padding:1px 5px;opacity:.8">Q:${quality}</span>`;
     card.innerHTML=`
       <div class="card-header">
-        <div><div class="matchup-name">${bet.matchup}</div><div class="bet-type">${bet.type==='K-Prop'?'K PROP':bet.type==='Fade'?'FADE':bet.type==='FADE_PROP'?(bet.lean&&bet.lean.includes('TOTAL BASES')?'FADE TB':bet.lean&&bet.lean.includes('NOT STRIKE OUT')?'FADE K':'FADE PROP'):bet.type==='TEAM_TOTAL'?'TEAM TOTAL':bet.market}</div></div>
+        <div><div class="matchup-name">${bet.matchup}</div><div class="bet-type">${bet.type==='K-Prop'?'K PROP':bet.type==='Fade'?'FADE':bet.type==='FADE_PROP'?(bet.lean&&bet.lean.includes('TOTAL BASES')?'Total Bases 1.5':bet.lean&&bet.lean.includes('HITS+RUNS+RBIS')?'HRR 1.5':'FADE PROP'):bet.type==='TEAM_TOTAL'?'TEAM TOTAL':bet.market}</div></div>
         <div style="display:flex;gap:5px;align-items:center">${qBadge}<span class="conf-badge conf-${bet.conf}">${bet.conf}</span></div>
       </div>
       <div class="card-body">
